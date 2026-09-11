@@ -2,12 +2,13 @@ import json
 from pathlib import Path
 
 from dotenv import load_dotenv
-from ollama import chat
+from groq import Groq
 
 
 load_dotenv()
 
-model = "qwen3:8b"
+client = Groq()
+model = "openai/gpt-oss-120b"
 
 base_dir = Path(__file__).resolve().parent.parent
 
@@ -40,14 +41,14 @@ Organize os dados abaixo para a planilha.
 DADOS DA EMPRESA:
 {json.dumps(empresa, ensure_ascii=False, indent=2)}
 
-PERFIL DO NEGÓCIO:
+PERFIL DO NEGOCIO:
 {json.dumps(perfil, ensure_ascii=False, indent=2)}
 
-SOLUÇÃO RECOMENDADA:
+SOLUCAO RECOMENDADA:
 {json.dumps(solucao, ensure_ascii=False, indent=2)}
 """
 
-    response = chat(
+    response = client.chat.completions.create(
         model=model,
         messages=[
             {
@@ -59,7 +60,14 @@ SOLUÇÃO RECOMENDADA:
                 "content": tarefa
             }
         ],
-        format=schema
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "planilha",
+                "strict": True,
+                "schema": schema
+            }
+        }
     )
 
     return extrair_resultado(response)
@@ -67,11 +75,11 @@ SOLUÇÃO RECOMENDADA:
 
 def extrair_resultado(response) -> dict:
 
-    conteudo = response.message.content
+    conteudo = response.choices[0].message.content
 
     if not conteudo:
         raise ValueError(
-            "O agente planilha não retornou nenhum resultado."
+            "O agente planilha nao retornou nenhum resultado."
         )
 
     try:
@@ -79,5 +87,5 @@ def extrair_resultado(response) -> dict:
 
     except json.JSONDecodeError as error:
         raise ValueError(
-            f"O agente planilha retornou um JSON inválido: {error}"
+            f"O agente planilha retornou um JSON invalido: {error}"
         )
