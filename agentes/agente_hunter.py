@@ -4,14 +4,15 @@ import unicodedata
 from pathlib import Path
 
 from dotenv import load_dotenv
-from ollama import chat
+from groq import Groq
 
 from tools.registro import tools, tool_functions
 
 
 load_dotenv()
 
-model = "qwen3:8b"
+client = Groq()
+model = "openai/gpt-oss-120b"
 
 base_dir = Path(__file__).resolve().parent.parent
 
@@ -42,8 +43,8 @@ def normalizar_texto(texto: str) -> str:
 def representante_segmento(segmento: str) -> str:
     """
     Reduz um segmento configurado (ex: 'estadias(estilo airbnb)',
-    'empresas de serviço') a uma palavra-chave representativa
-    ('estadias', 'servico'), pra dar pra checar se ele já foi
+    'empresas de servico') a uma palavra-chave representativa
+    ('estadias', 'servico'), pra dar pra checar se ele ja foi
     pesquisado, sem depender do texto exato que o modelo usar.
     """
 
@@ -66,9 +67,14 @@ def executar_tool(nome: str, argumentos: dict):
     return funcao(**argumentos)
 
 
-def executar_hunter(tarefa: str, segmentos: list | None = None) -> dict:
+def executar_hunter(
+    tarefa: str,
+    segmentos: list | None = None,
+    cidade: str | None = None
+) -> dict:
 
     system_prompt = carregar_prompt()
+    cidade_ref = cidade or "na cidade informada"
 
     messages = [
         {
@@ -98,31 +104,37 @@ def executar_hunter(tarefa: str, segmentos: list | None = None) -> dict:
 
         if iteracao > max_iteracoes:
             raise RuntimeError(
-                "O Hunter atingiu o limite máximo de iterações "
+                "O Hunter atingiu o limite maximo de iteracoes "
                 "sem concluir a tarefa."
             )
 
-        response = chat(
+        response = client.chat.completions.create(
             model=model,
             messages=messages,
             tools=tools
         )
 
-        messages.append(response.message)
+        mensagem = response.choices[0].message
+
+        messages.append(mensagem.model_dump(exclude_none=True))
 
         print("\n========================================")
-        print(f"ITERAÇÃO {iteracao}")
-        print("TOOL_CALLS:", response.message.tool_calls)
+        print(f"ITERACAO {iteracao}")
+        print("TOOL_CALLS:", mensagem.tool_calls)
         print("CONTENT (resposta do modelo):")
-        print(response.message.content)
+        print(mensagem.content)
         print("========================================")
 
-        if response.message.tool_calls:
+        if mensagem.tool_calls:
 
-            for tool_call in response.message.tool_calls:
+            for tool_call in mensagem.tool_calls:
 
                 nome_tool = tool_call.function.name
-                argumentos = tool_call.function.arguments
+
+                try:
+                    argumentos = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    argumentos = {}
 
                 print("\n========================================")
                 print("TOOL CHAMADA")
@@ -159,7 +171,7 @@ def executar_hunter(tarefa: str, segmentos: list | None = None) -> dict:
                     messages.append(
                         {
                             "role": "tool",
-                            "tool_name": nome_tool,
+                            "tool_call_id": tool_call.id,
                             "content": json.dumps(
                                 resultado,
                                 ensure_ascii=False
@@ -175,7 +187,7 @@ def executar_hunter(tarefa: str, segmentos: list | None = None) -> dict:
                     messages.append(
                         {
                             "role": "tool",
-                            "tool_name": nome_tool,
+                            "tool_call_id": tool_call.id,
                             "content": json.dumps(
                                 {
                                     "error": str(error)
@@ -188,7 +200,7 @@ def executar_hunter(tarefa: str, segmentos: list | None = None) -> dict:
             continue
 
         # O modelo respondeu sem chamar nenhuma ferramenta.
-        # Só aceita isso como "terminei" se já tiver ao menos
+        # So aceita isso como "terminei" se ja tiver ao menos
         # tentado pesquisar todos os segmentos configurados.
         faltando = {
             chave: nome
@@ -206,12 +218,12 @@ def executar_hunter(tarefa: str, segmentos: list | None = None) -> dict:
                 {
                     "role": "user",
                     "content": (
-                        "Você ainda não chamou pesquisar_web para os "
+                        "Voce ainda nao chamou pesquisar_web para os "
                         f"seguintes segmentos: {lista_faltando}. "
                         "Continue agora mesmo chamando pesquisar_web "
-                        "para o próximo desses segmentos em Cornélio "
-                        "Procópio, no formato '<segmento> em <cidade>'. "
-                        "Não finalize antes de tentar todos."
+                        f"para o proximo desses segmentos em {cidade_ref}, "
+                        "no formato '<segmento> em <cidade>'. "
+                        "Nao finalize antes de tentar todos."
                     )
                 }
             )
@@ -219,13 +231,6 @@ def executar_hunter(tarefa: str, segmentos: list | None = None) -> dict:
             continue
 
         break
-
-    conteudo_final = response.message.content
-
-    if not conteudo_final:
-        raise ValueError(
-            "O Hunter não retornou nenhuma decisão final."
-        )
 
     schema = carregar_schema()
 
@@ -235,21 +240,28 @@ def executar_hunter(tarefa: str, segmentos: list | None = None) -> dict:
             "content": (
                 "Finalize a tarefa agora. "
                 "Retorne exclusivamente um objeto JSON "
-                "compatível com o schema empresa.json. "
+                "compativel com o schema fornecido. "
                 "Inclua somente empresas reais e efetivamente "
                 "validadas pelas ferramentas. "
-                "Não invente nenhum dado. "
-                "Empresas rejeitadas não devem aparecer. "
-                "Se nenhuma empresa válida tiver sido encontrada, "
+                "Nao invente nenhum dado. "
+                "Empresas rejeitadas nao devem aparecer. "
+                "Se nenhuma empresa valida tiver sido encontrada, "
                 "retorne {\"empresas\": []}."
             )
         }
     ]
 
-    resposta_final = chat(
+    resposta_final = client.chat.completions.create(
         model=model,
         messages=mensagens_finais,
-        format=schema
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "empresas_encontradas",
+                "strict": True,
+                "schema": schema
+            }
+        }
     )
 
     return extrair_resultado(resposta_final)
@@ -257,11 +269,11 @@ def executar_hunter(tarefa: str, segmentos: list | None = None) -> dict:
 
 def extrair_resultado(response) -> dict:
 
-    conteudo = response.message.content
+    conteudo = response.choices[0].message.content
 
     if not conteudo:
         raise ValueError(
-            "O Hunter não retornou nenhum resultado."
+            "O Hunter nao retornou nenhum resultado."
         )
 
     try:
@@ -271,7 +283,7 @@ def extrair_resultado(response) -> dict:
     except json.JSONDecodeError as error:
 
         raise ValueError(
-            f"O Hunter retornou um JSON inválido: {error}"
+            f"O Hunter retornou um JSON invalido: {error}"
         )
 
     if not isinstance(resultado, dict):
@@ -283,7 +295,7 @@ def extrair_resultado(response) -> dict:
     if "empresas" not in resultado:
 
         raise ValueError(
-            "O resultado do Hunter não possui o campo 'empresas'."
+            "O resultado do Hunter nao possui o campo 'empresas'."
         )
 
     if not isinstance(resultado["empresas"], list):
