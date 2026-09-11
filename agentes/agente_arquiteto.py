@@ -2,12 +2,13 @@ import json
 from pathlib import Path
 
 from dotenv import load_dotenv
-from ollama import chat
+from groq import Groq
 
 
 load_dotenv()
 
-model = "qwen3:8b"
+client = Groq()
+model = "openai/gpt-oss-120b"
 
 base_dir = Path(__file__).resolve().parent.parent
 
@@ -31,14 +32,14 @@ def executar_arquiteto(perfil: dict) -> dict:
     schema = carregar_schema()
 
     tarefa = f"""
-Analise o perfil de negócio abaixo e determine a solução digital
+Analise o perfil de negocio abaixo e determine a solucao digital
 mais adequada para essa empresa.
 
-PERFIL DO NEGÓCIO:
+PERFIL DO NEGOCIO:
 {json.dumps(perfil, ensure_ascii=False, indent=2)}
 """
 
-    response = chat(
+    response = client.chat.completions.create(
         model=model,
         messages=[
             {
@@ -50,7 +51,14 @@ PERFIL DO NEGÓCIO:
                 "content": tarefa
             }
         ],
-        format=schema
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "solucao_digital",
+                "strict": True,
+                "schema": schema
+            }
+        }
     )
 
     return extrair_resultado(response)
@@ -58,9 +66,11 @@ PERFIL DO NEGÓCIO:
 
 def extrair_resultado(response) -> dict:
 
-    if not response.message.content:
+    conteudo = response.choices[0].message.content
+
+    if not conteudo:
         raise ValueError(
-            "O agente arquiteto não retornou nenhum resultado."
+            "O agente arquiteto nao retornou nenhum resultado."
         )
 
-    return json.loads(response.message.content)
+    return json.loads(conteudo)

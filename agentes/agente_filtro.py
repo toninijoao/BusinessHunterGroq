@@ -2,15 +2,17 @@ import json
 from pathlib import Path
 
 from dotenv import load_dotenv
-from ollama import chat
+from groq import Groq
 
 from tools.pesquisa_web import pesquisar_web, pesquisar_web_tool
 from tools.mapeador import mapear_endereco, mapear_endereco_tool
+from tools.registro import formato_openai
 
 
 load_dotenv()
 
-model = "qwen3:8b"
+client = Groq()
+model = "openai/gpt-oss-120b"
 
 base_dir = Path(__file__).resolve().parent.parent
 
@@ -29,8 +31,8 @@ def carregar_schema() -> dict:
 
 
 tools = [
-    pesquisar_web,
-    mapear_endereco
+    formato_openai(pesquisar_web_tool),
+    formato_openai(mapear_endereco_tool)
 ]
 
 
@@ -55,7 +57,7 @@ def executar_filtro(empresa: dict) -> dict:
     schema = carregar_schema()
 
     tarefa = f"""
-Construa o perfil de negócio da empresa abaixo.
+Construa o perfil de negocio da empresa abaixo.
 
 Empresa:
 {json.dumps(empresa, ensure_ascii=False, indent=2)}
@@ -72,31 +74,49 @@ Empresa:
         }
     ]
 
+    max_iteracoes = 15
+    iteracao = 0
+
     while True:
 
-        response = chat(
+        iteracao += 1
+
+        if iteracao > max_iteracoes:
+            raise RuntimeError(
+                "O agente filtro atingiu o limite maximo de "
+                "iteracoes sem concluir a tarefa."
+            )
+
+        response = client.chat.completions.create(
             model=model,
             messages=messages,
             tools=tools
         )
 
-        messages.append(response.message)
+        mensagem = response.choices[0].message
 
-        if not response.message.tool_calls:
+        messages.append(mensagem.model_dump(exclude_none=True))
+
+        if not mensagem.tool_calls:
             break
 
-        for tool_call in response.message.tool_calls:
+        for tool_call in mensagem.tool_calls:
+
+            try:
+                argumentos = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                argumentos = {}
 
             try:
                 resultado = executar_tool(
                     tool_call.function.name,
-                    tool_call.function.arguments
+                    argumentos
                 )
 
                 messages.append(
                     {
                         "role": "tool",
-                        "tool_name": tool_call.function.name,
+                        "tool_call_id": tool_call.id,
                         "content": json.dumps(
                             resultado,
                             ensure_ascii=False
@@ -109,7 +129,7 @@ Empresa:
                 messages.append(
                     {
                         "role": "tool",
-                        "tool_name": tool_call.function.name,
+                        "tool_call_id": tool_call.id,
                         "content": json.dumps(
                             {
                                 "error": str(error)
@@ -119,16 +139,40 @@ Empresa:
                     }
                 )
 
-    return extrair_resultado(response, schema)
+    mensagens_finais = messages + [
+        {
+            "role": "user",
+            "content": (
+                "Finalize agora. Retorne exclusivamente um objeto "
+                "JSON compativel com o schema fornecido, com o "
+                "perfil de negocio dessa empresa."
+            )
+        }
+    ]
+
+    resposta_final = client.chat.completions.create(
+        model=model,
+        messages=mensagens_finais,
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "perfil_negocio",
+                "strict": True,
+                "schema": schema
+            }
+        }
+    )
+
+    return extrair_resultado(resposta_final)
 
 
-def extrair_resultado(response, schema: dict) -> dict:
+def extrair_resultado(response) -> dict:
 
-    conteudo = response.message.content
+    conteudo = response.choices[0].message.content
 
     if not conteudo:
         raise ValueError(
-            "O agente filtro não retornou nenhum resultado."
+            "O agente filtro nao retornou nenhum resultado."
         )
 
     try:
@@ -136,5 +180,5 @@ def extrair_resultado(response, schema: dict) -> dict:
 
     except json.JSONDecodeError as error:
         raise ValueError(
-            f"O agente filtro retornou um JSON inválido: {error}"
+            f"O agente filtro retornou um JSON invalido: {error}"
         )
