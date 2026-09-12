@@ -3,11 +3,15 @@ from orquestrador.orquestrador import carregar_config, criar_tarefa, executar_pi
 def main():
     config = carregar_config()
 
-    tarefa = criar_tarefa(config)
+    cidade = input("Cidade: ").strip()
+    estado = input("Estado (UF, opcional): ").strip()
+
+    tarefa = criar_tarefa(config, cidade=cidade, estado=estado)
 
     resultado = executar_pipeline(
         tarefa,
-        segmentos=config.get("segmentos")
+        segmentos=config.get("segmentos"),
+        cidade=cidade
     )
 
     print(
