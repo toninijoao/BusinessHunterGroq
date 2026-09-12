@@ -1,6 +1,5 @@
 import re
 import json
-import time
 import requests
 
 
@@ -278,50 +277,45 @@ def pesquisar_web(
     response = None
     ultimo_erro = None
 
+    # Timeout e tentativas enxutos de propósito: no Hobby da Vercel a
+    # função inteira tem só 300s de orçamento. Pior caso aqui:
+    # 3 espelhos x 1 tentativa x 15s = 45s, contra os 360s de antes.
     for url in OVERPASS_URLS:
 
-        for tentativa in range(2):
+        try:
+            response = requests.post(
+                url,
+                data={
+                    "data": overpass_query
+                },
+                headers=headers,
+                timeout=15
+            )
 
-            try:
-                response = requests.post(
-                    url,
-                    data={
-                        "data": overpass_query
-                    },
-                    headers=headers,
-                    timeout=60
-                )
-
-                response.raise_for_status()
-                ultimo_erro = None
-                break
-
-            except requests.exceptions.Timeout as error:
-                ultimo_erro = error
-                time.sleep(3)
-                continue
-
-            except requests.exceptions.HTTPError as error:
-                # 429 (rate limit) e 504 (servidor ocupado) valem
-                # tentar de novo ou trocar de espelho.
-                status = error.response.status_code if error.response else None
-
-                if status in (429, 502, 503, 504):
-                    ultimo_erro = error
-                    time.sleep(3)
-                    continue
-
-                raise RuntimeError(
-                    f"Erro ao consultar o Overpass API ({url}): {error}"
-                )
-
-            except requests.exceptions.RequestException as error:
-                ultimo_erro = error
-                time.sleep(3)
-                continue
-
-        if ultimo_erro is None:
+            response.raise_for_status()
+            ultimo_erro = None
             break
+
+        except requests.exceptions.Timeout as error:
+            ultimo_erro = error
+            continue
+
+        except requests.exceptions.HTTPError as error:
+            # 429 (rate limit) e 504 (servidor ocupado) valem
+            # trocar de espelho.
+            status = error.response.status_code if error.response else None
+
+            if status in (429, 502, 503, 504):
+                ultimo_erro = error
+                continue
+
+            raise RuntimeError(
+                f"Erro ao consultar o Overpass API ({url}): {error}"
+            )
+
+        except requests.exceptions.RequestException as error:
+            ultimo_erro = error
+            continue
 
     if ultimo_erro is not None:
         raise RuntimeError(
