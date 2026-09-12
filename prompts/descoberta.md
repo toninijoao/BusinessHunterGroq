@@ -53,11 +53,11 @@ combinação.
 
 Não classifique você mesmo o status — use o que a ferramenta retornou.
 
-## Prioridade geográfica
+## Localização
 
-1. Cornélio Procópio - PR
-2. Norte do Paraná / Paraná
-3. Demais regiões do Brasil (pesquise aqui se faltar candidatas)
+A tarefa informa a cidade (e estado) exatos onde pesquisar. Pesquise
+somente nessa cidade — não pesquise em outras cidades ou regiões,
+mesmo que faltem candidatas.
 
 ## Resultado final
 
