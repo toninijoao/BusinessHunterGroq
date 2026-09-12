@@ -1,5 +1,3 @@
-const API_BASE_URL = "http://127.0.0.1:8000";
-
 interface Empresa {
   name: string;
   city: string;
@@ -27,18 +25,89 @@ interface ResultadoPipeline {
   resultados: ResultadoItem[];
 }
 
-const STATUS_LEGIVEL: Record<string, string> = {
-  WEBSITE_NOT_FOUND: "Sem site",
-  WEBSITE_FOUND: "Tem site",
-  WEBSITE_UNCERTAIN: "Incerto"
+interface EstadoIBGE {
+  id: number;
+  sigla: string;
+  nome: string;
+}
+
+interface MunicipioIBGE {
+  id: number;
+  nome: string;
+}
+
+const IBGE_ESTADOS_URL =
+  "https://servicodados.ibge.gov.br/api/v1/localidades/estados?orderBy=nome";
+
+function urlMunicipios(uf: string): string {
+  return `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`;
+}
+
+const STATUS_LEGIVEL: Record<string, { texto: string; classe: string }> = {
+  WEBSITE_NOT_FOUND: { texto: "Sem site", classe: "badge--ok" },
+  WEBSITE_FOUND: { texto: "Tem site", classe: "badge--neutro" },
+  WEBSITE_UNCERTAIN: { texto: "Incerto", classe: "badge--alerta" }
 };
 
+const selectEstado = document.querySelector<HTMLSelectElement>("#select-estado");
+const selectCidade = document.querySelector<HTMLSelectElement>("#select-cidade");
 const botao = document.querySelector<HTMLButtonElement>("#botao-iniciar");
 const elementoStatus = document.querySelector<HTMLParagraphElement>("#status");
 const corpoTabela = document.querySelector<HTMLTableSectionElement>("#corpo-tabela");
 
-if (!botao || !elementoStatus || !corpoTabela) {
+if (!selectEstado || !selectCidade || !botao || !elementoStatus || !corpoTabela) {
   throw new Error("Elementos da página não encontrados.");
+}
+
+async function carregarEstados(): Promise<void> {
+  try {
+    const resposta = await fetch(IBGE_ESTADOS_URL);
+    const estados: EstadoIBGE[] = await resposta.json();
+
+    selectEstado!.innerHTML = '<option value="">Selecione o estado</option>';
+
+    estados.forEach((estado) => {
+      const opcao = document.createElement("option");
+      opcao.value = estado.sigla;
+      opcao.textContent = `${estado.nome} (${estado.sigla})`;
+      selectEstado!.appendChild(opcao);
+    });
+
+  } catch {
+    selectEstado!.innerHTML = '<option value="">Falha ao carregar estados</option>';
+  }
+}
+
+async function carregarCidades(uf: string): Promise<void> {
+  selectCidade!.disabled = true;
+  selectCidade!.innerHTML = '<option value="">Carregando...</option>';
+  atualizarBotao();
+
+  try {
+    const resposta = await fetch(urlMunicipios(uf));
+    const municipios: MunicipioIBGE[] = await resposta.json();
+
+    selectCidade!.innerHTML = '<option value="">Selecione a cidade</option>';
+
+    municipios.forEach((municipio) => {
+      const opcao = document.createElement("option");
+      opcao.value = municipio.nome;
+      opcao.textContent = municipio.nome;
+      selectCidade!.appendChild(opcao);
+    });
+
+    selectCidade!.disabled = false;
+
+  } catch {
+    selectCidade!.innerHTML = '<option value="">Falha ao carregar cidades</option>';
+
+  } finally {
+    atualizarBotao();
+  }
+}
+
+function atualizarBotao(): void {
+  botao!.disabled = !selectCidade!.value;
 }
 
 function limparTabela(): void {
@@ -68,41 +137,52 @@ function renderizarLinha(item: ResultadoItem): void {
 
   linha.appendChild(criarCelula(empresa.name || ""));
   linha.appendChild(
-    criarCelula(
-      [empresa.city, empresa.state].filter(Boolean).join(" / ")
-    )
+    criarCelula([empresa.city, empresa.state].filter(Boolean).join(" / "))
   );
   linha.appendChild(criarCelula(empresa.phone || ""));
   linha.appendChild(criarCelula(empresa.address || ""));
 
-  const celulaSite = document.createElement("td");
+  const celulaMapa = document.createElement("td");
   if (empresa.google_maps) {
     const link = document.createElement("a");
     link.href = empresa.google_maps;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    link.textContent = "Google Maps";
-    celulaSite.appendChild(link);
+    link.textContent = "Ver mapa";
+    celulaMapa.appendChild(link);
   }
-  linha.appendChild(celulaSite);
+  linha.appendChild(celulaMapa);
 
-  linha.appendChild(
-    criarCelula(
-      STATUS_LEGIVEL[empresa.website_status] ?? empresa.website_status ?? ""
-    )
-  );
+  const celulaStatus = document.createElement("td");
+  const info = STATUS_LEGIVEL[empresa.website_status];
+  const selo = document.createElement("span");
+  selo.className = `badge ${info?.classe ?? "badge--neutro"}`;
+  selo.textContent = info?.texto ?? empresa.website_status ?? "";
+  celulaStatus.appendChild(selo);
+  linha.appendChild(celulaStatus);
 
   corpoTabela!.appendChild(linha);
 }
 
 async function iniciarBusca(): Promise<void> {
+  const cidade = selectCidade!.value;
+  const estado = selectEstado!.value;
+
+  if (!cidade) {
+    return;
+  }
+
   botao!.disabled = true;
-  elementoStatus!.textContent = "Buscando... isso pode levar alguns minutos.";
+  elementoStatus!.textContent = `Buscando em ${cidade} - ${estado}... isso pode levar alguns minutos.`;
   limparTabela();
 
   try {
-    const resposta = await fetch(`${API_BASE_URL}/executar`, {
-      method: "POST"
+    const resposta = await fetch("/api/executar", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ cidade, estado })
     });
 
     if (!resposta.ok) {
@@ -127,10 +207,27 @@ async function iniciarBusca(): Promise<void> {
     elementoStatus!.textContent = `Falha ao executar a busca: ${(erro as Error).message}`;
 
   } finally {
-    botao!.disabled = false;
+    atualizarBotao();
   }
 }
+
+selectEstado.addEventListener("change", () => {
+  const uf = selectEstado!.value;
+
+  if (!uf) {
+    selectCidade!.disabled = true;
+    selectCidade!.innerHTML = '<option value="">Selecione o estado primeiro</option>';
+    atualizarBotao();
+    return;
+  }
+
+  void carregarCidades(uf);
+});
+
+selectCidade.addEventListener("change", atualizarBotao);
 
 botao.addEventListener("click", () => {
   void iniciarBusca();
 });
+
+void carregarEstados();
