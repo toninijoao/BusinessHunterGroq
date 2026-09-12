@@ -1,14 +1,6 @@
 quantidade_empresas: 20
 
-localizacoes_prioritarias:
- - Cornélio Procópio - PR
- - Proximidades de Piraju
- - Interior do estado de São Paulo
- - Norte do Paraná
- - Paraná
- - Demais estados
-
-segmentos: 
+segmentos:
  - clínicas
  - estadias(estilo airbnb)
  - barbearias
