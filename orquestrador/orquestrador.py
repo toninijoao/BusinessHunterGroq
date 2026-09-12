@@ -16,14 +16,13 @@ def carregar_config() -> dict:
     with config_path.open("r", encoding="utf-8") as arquivo:
         return yaml.safe_load(arquivo)
 
-def criar_tarefa(config: dict) -> str:
+def criar_tarefa(config: dict, cidade: str, estado: str) -> str:
     quantidade = config.get("quantidade_empresas", 20)
-    localizacoes = config.get("localizacoes_prioritarias", [])
     segmentos = config.get("segmentos", [])
 
-    if not localizacoes:
+    if not cidade or not cidade.strip():
         raise ValueError(
-            "Nenhuma localização foi configurada."
+            "Nenhuma cidade foi informada."
         )
 
     if not segmentos:
@@ -31,10 +30,7 @@ def criar_tarefa(config: dict) -> str:
             "Nenhum segmento foi configurado."
         )
 
-    locais_formatados = "\n".join(
-        f"{i + 1}. {local}"
-        for i, local in enumerate(localizacoes)
-    )
+    localizacao = f"{cidade} - {estado}" if estado else cidade
 
     segmentos_formatados = "\n".join(
         f"- {segmento}"
@@ -42,10 +38,8 @@ def criar_tarefa(config: dict) -> str:
     )
 
     return f"""
-    Encontre {quantidade} empresas de pequeno ou médio porte no Brasil.
-
-    Prioridade geográfica:
-    {locais_formatados}
+    Encontre até {quantidade} empresas de pequeno ou médio porte em
+    {localizacao}, no Brasil.
 
     Segmentos permitidos:
     {segmentos_formatados}
@@ -60,22 +54,26 @@ def criar_tarefa(config: dict) -> str:
     - Não inclua empresas já existentes no banco de dados.
     - Valide cuidadosamente a ausência de um site antes de considerar a empresa válida.
     - Não invente informações.
-    - Priorize empresas encontradas em Cornélio Procópio, e, depois, nas demais regiões prioritárias.
+    - Pesquise somente em {localizacao}. Não pesquise em outras cidades.
 
     Retorne somente empresas que atendam aos critérios.
 
     ATENÇÃO - PRIMEIRO PASSO OBRIGATÓRIO:
     Você ainda não pesquisou nada. É PROIBIDO responder com {{"empresas": []}}
     ou qualquer resultado final antes de chamar a ferramenta pesquisar_web
-    pelo menos uma vez para cada segmento permitido em Cornélio Procópio.
+    pelo menos uma vez para cada segmento permitido em {localizacao}.
     "Não invento dados" significa usar as ferramentas para descobrir dados
     reais - NÃO significa deixar de pesquisar e responder vazio.
     Comece agora mesmo chamando pesquisar_web com UM segmento e UMA
     localização, no formato '<segmento> em <cidade>'.
 """
 
-def executar_pipeline(tarefa: str, segmentos: list | None = None) -> dict:
-    empresas = executar_hunter(tarefa, segmentos=segmentos)
+def executar_pipeline(
+    tarefa: str,
+    segmentos: list | None = None,
+    cidade: str | None = None
+) -> dict:
+    empresas = executar_hunter(tarefa, segmentos=segmentos, cidade=cidade)
 
     if not isinstance(empresas, dict):
         raise ValueError(
@@ -121,7 +119,13 @@ def executar_pipeline(tarefa: str, segmentos: list | None = None) -> dict:
 
 if __name__ == "__main__":
     config = carregar_config()
-    tarefa = criar_tarefa(config)
-    resultado = executar_pipeline(tarefa)
+    cidade = input("Cidade: ").strip()
+    estado = input("Estado (UF, opcional): ").strip()
+    tarefa = criar_tarefa(config, cidade=cidade, estado=estado)
+    resultado = executar_pipeline(
+        tarefa,
+        segmentos=config.get("segmentos"),
+        cidade=cidade
+    )
 
     print(json.dumps(resultado, ensure_ascii=False, indent=4))
