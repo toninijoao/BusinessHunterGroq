@@ -4,14 +4,50 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Business Hunter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <main>
       <header>
-        <h1>Business Hunter</h1>
-        <button id="botao-iniciar" type="button">Iniciar busca</button>
+        <div class="marca">
+          <svg class="marca-icone" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7Z"
+              stroke="currentColor"
+              stroke-width="1.6"
+            />
+            <circle cx="12" cy="9" r="2.5" stroke="currentColor" stroke-width="1.6" />
+          </svg>
+          <div>
+            <h1>Business Hunter</h1>
+            <p class="subtitulo">Encontre negócios sem presença digital, cidade por cidade</p>
+          </div>
+        </div>
       </header>
+
+      <section class="painel-busca" aria-label="Filtros de busca">
+        <div class="campo">
+          <label for="select-estado">Estado</label>
+          <select id="select-estado">
+            <option value="">Carregando...</option>
+          </select>
+        </div>
+
+        <div class="campo">
+          <label for="select-cidade">Cidade</label>
+          <select id="select-cidade" disabled>
+            <option value="">Selecione o estado primeiro</option>
+          </select>
+        </div>
+
+        <button id="botao-iniciar" type="button" disabled>Iniciar busca</button>
+      </section>
 
       <p id="status" role="status"></p>
 
@@ -22,7 +58,7 @@
             <th>Cidade / UF</th>
             <th>Telefone</th>
             <th>Endereço</th>
-            <th>Site</th>
+            <th>Mapa</th>
             <th>Status</th>
           </tr>
         </thead>
