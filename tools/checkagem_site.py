@@ -195,8 +195,7 @@ def verificar_site(
 
     consultas = [
         f'"{nome_empresa}" "{cidade}"',
-        f'"{nome_empresa}" site',
-        f'"{nome_empresa}" "{cidade}" site'
+        f'"{nome_empresa}" site'
     ]
 
     resultados = []
