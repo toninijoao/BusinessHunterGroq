@@ -81,6 +81,8 @@ def executar_pipeline(
         )
 
     lista_empresas = empresas.get("empresas", [])
+    debug_log = empresas.get("debug_log", [])
+    erro_hunter = empresas.get("erro")
 
     if not isinstance(lista_empresas, list):
         raise ValueError(
@@ -114,7 +116,9 @@ def executar_pipeline(
     return {
         "quantidade_encontrada": len(lista_empresas),
         "quantidade_processada": len(resultados),
-        "resultados": resultados
+        "resultados": resultados,
+        "erro_hunter": erro_hunter,
+        "debug_log": debug_log
     }
 
 if __name__ == "__main__":
