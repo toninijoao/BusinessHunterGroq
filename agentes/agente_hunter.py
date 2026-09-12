@@ -73,6 +73,41 @@ def executar_hunter(
     cidade: str | None = None
 ) -> dict:
 
+    debug_log: list[str] = []
+
+    def registrar(*partes: object) -> None:
+        linha = " ".join(str(p) for p in partes)
+        print(linha, flush=True)
+        debug_log.append(linha)
+
+    try:
+        resultado = _executar_hunter_interno(
+            tarefa,
+            segmentos,
+            cidade,
+            registrar
+        )
+        resultado["debug_log"] = debug_log
+        return resultado
+
+    except Exception as error:
+
+        registrar("ERRO FATAL NO HUNTER:", f"{type(error).__name__}: {error}")
+
+        return {
+            "empresas": [],
+            "erro": f"{type(error).__name__}: {error}",
+            "debug_log": debug_log
+        }
+
+
+def _executar_hunter_interno(
+    tarefa: str,
+    segmentos: list | None,
+    cidade: str | None,
+    registrar
+) -> dict:
+
     system_prompt = carregar_prompt()
     cidade_ref = cidade or "na cidade informada"
 
@@ -108,6 +143,8 @@ def executar_hunter(
                 "sem concluir a tarefa."
             )
 
+        registrar(f"--- Chamando Groq (iteracao {iteracao}) ---")
+
         response = client.chat.completions.create(
             model=model,
             messages=messages,
@@ -118,12 +155,9 @@ def executar_hunter(
 
         messages.append(mensagem.model_dump(exclude_none=True))
 
-        print("\n========================================")
-        print(f"ITERACAO {iteracao}")
-        print("TOOL_CALLS:", mensagem.tool_calls)
-        print("CONTENT (resposta do modelo):")
-        print(mensagem.content)
-        print("========================================")
+        registrar(f"ITERACAO {iteracao}")
+        registrar("TOOL_CALLS:", mensagem.tool_calls)
+        registrar("CONTENT (resposta do modelo):", mensagem.content)
 
         if mensagem.tool_calls:
 
@@ -136,11 +170,7 @@ def executar_hunter(
                 except json.JSONDecodeError:
                     argumentos = {}
 
-                print("\n========================================")
-                print("TOOL CHAMADA")
-                print("Nome:", nome_tool)
-                print("Argumentos:", argumentos)
-                print("========================================")
+                registrar("TOOL CHAMADA:", nome_tool, "| Argumentos:", argumentos)
 
                 if nome_tool == "pesquisar_web":
 
@@ -159,13 +189,9 @@ def executar_hunter(
                         argumentos
                     )
 
-                    print("\nRESULTADO DA TOOL:")
-                    print(
-                        json.dumps(
-                            resultado,
-                            ensure_ascii=False,
-                            indent=2
-                        )
+                    registrar(
+                        "RESULTADO DA TOOL:",
+                        json.dumps(resultado, ensure_ascii=False)
                     )
 
                     messages.append(
@@ -181,8 +207,7 @@ def executar_hunter(
 
                 except Exception as error:
 
-                    print("\nERRO NA TOOL:")
-                    print(str(error))
+                    registrar("ERRO NA TOOL:", str(error))
 
                     messages.append(
                         {
@@ -213,6 +238,11 @@ def executar_hunter(
             avisos_continuar += 1
 
             lista_faltando = ", ".join(faltando.values())
+
+            registrar(
+                "Modelo tentou parar sem cobrir todos os segmentos. "
+                f"Faltando: {lista_faltando}"
+            )
 
             messages.append(
                 {
@@ -251,6 +281,8 @@ def executar_hunter(
         }
     ]
 
+    registrar("--- Chamando Groq para o JSON final ---")
+
     resposta_final = client.chat.completions.create(
         model=model,
         messages=mensagens_finais,
@@ -264,7 +296,14 @@ def executar_hunter(
         }
     )
 
-    return extrair_resultado(resposta_final)
+    resultado = extrair_resultado(resposta_final)
+
+    registrar(
+        "RESULTADO FINAL:",
+        json.dumps(resultado, ensure_ascii=False)
+    )
+
+    return resultado
 
 
 def extrair_resultado(response) -> dict:
