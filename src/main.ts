@@ -23,6 +23,8 @@ interface ResultadoPipeline {
   quantidade_encontrada: number;
   quantidade_processada: number;
   resultados: ResultadoItem[];
+  erro_hunter?: string | null;
+  debug_log?: string[];
 }
 
 interface EstadoIBGE {
@@ -114,6 +116,38 @@ function limparTabela(): void {
   corpoTabela!.innerHTML = "";
 }
 
+function renderizarDebugLog(resultado: ResultadoPipeline): void {
+
+  const anterior = document.querySelector("#debug-log");
+  anterior?.remove();
+
+  if (!resultado.debug_log || resultado.debug_log.length === 0) {
+    return;
+  }
+
+  const detalhes = document.createElement("details");
+  detalhes.id = "debug-log";
+
+  const resumo = document.createElement("summary");
+  resumo.textContent = resultado.erro_hunter
+    ? "Ver detalhes técnicos (um erro ocorreu)"
+    : "Ver detalhes técnicos da busca";
+  detalhes.appendChild(resumo);
+
+  if (resultado.erro_hunter) {
+    const erro = document.createElement("p");
+    erro.className = "debug-erro";
+    erro.textContent = resultado.erro_hunter;
+    detalhes.appendChild(erro);
+  }
+
+  const pre = document.createElement("pre");
+  pre.textContent = resultado.debug_log.join("\n");
+  detalhes.appendChild(pre);
+
+  elementoStatus!.insertAdjacentElement("afterend", detalhes);
+}
+
 function criarCelula(texto: string): HTMLTableCellElement {
   const celula = document.createElement("td");
   celula.textContent = texto;
@@ -175,6 +209,7 @@ async function iniciarBusca(): Promise<void> {
   botao!.disabled = true;
   elementoStatus!.textContent = `Buscando em ${cidade} - ${estado}... isso pode levar alguns minutos.`;
   limparTabela();
+  document.querySelector("#debug-log")?.remove();
 
   try {
     const resposta = await fetch("/api/executar", {
@@ -192,8 +227,12 @@ async function iniciarBusca(): Promise<void> {
 
     const resultado: ResultadoPipeline = await resposta.json();
 
+    renderizarDebugLog(resultado);
+
     if (resultado.resultados.length === 0) {
-      elementoStatus!.textContent = "Nenhuma empresa encontrada.";
+      elementoStatus!.textContent = resultado.erro_hunter
+        ? "A busca não foi concluída — veja os detalhes técnicos abaixo."
+        : "Nenhuma empresa encontrada.";
       return;
     }
 

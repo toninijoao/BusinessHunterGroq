@@ -180,6 +180,36 @@ a {
   color: var(--cor-acento);
 }
 
+#debug-log {
+  margin: 0 0 1.25rem 0.1rem;
+  font-size: 0.85rem;
+}
+
+#debug-log summary {
+  cursor: pointer;
+  color: var(--cor-texto-suave);
+}
+
+#debug-log .debug-erro {
+  color: #a3312b;
+  font-weight: 500;
+  margin: 0.5rem 0;
+}
+
+#debug-log pre {
+  max-height: 320px;
+  overflow: auto;
+  background: #1b2430;
+  color: #e7e5df;
+  padding: 0.9rem;
+  border-radius: var(--raio);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.78rem;
+  margin-top: 0.5rem;
+}
+
 .badge {
   display: inline-block;
   padding: 0.15rem 0.55rem;
