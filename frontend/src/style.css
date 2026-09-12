@@ -1,73 +1,215 @@
+:root {
+  --cor-fundo: #f7f6f2;
+  --cor-fundo-painel: #ffffff;
+  --cor-texto: #1b2430;
+  --cor-texto-suave: #5b6472;
+  --cor-borda: #dcd9d2;
+  --cor-linha-alt: #f0efe9;
+  --cor-acento: #2f6f5e;
+  --cor-acento-escuro: #1f4d40;
+  --cor-status-ok: #2f6f5e;
+  --cor-status-neutro: #8a8578;
+  --cor-status-alerta: #a9762f;
+  --raio: 3px;
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  padding: 2rem;
-  font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-  color: #1a1a1a;
-  background: #ffffff;
+  padding: 3rem 1.5rem 4rem;
+  background: var(--cor-fundo);
+  color: var(--cor-texto);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 main {
-  max-width: 960px;
+  max-width: 880px;
   margin: 0 auto;
 }
 
 header {
+  margin-bottom: 2.25rem;
+}
+
+.marca {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.marca-icone {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  color: var(--cor-acento);
+  margin-top: 0.35rem;
 }
 
 h1 {
-  font-size: 1.25rem;
+  font-family: "Fraunces", Georgia, serif;
   font-weight: 600;
+  font-size: 2.1rem;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.3rem 0;
+  color: var(--cor-texto);
+}
+
+.subtitulo {
   margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: 0.98rem;
+}
+
+.painel-busca {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.5rem;
+  background: var(--cor-fundo-painel);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio);
+  margin-bottom: 1rem;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 200px;
+  flex: 1;
+}
+
+.campo label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--cor-texto-suave);
+}
+
+select {
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio);
+  background: var(--cor-fundo-painel);
+  color: var(--cor-texto);
+}
+
+select:disabled {
+  color: var(--cor-texto-suave);
+  background: var(--cor-linha-alt);
+}
+
+select:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--cor-acento);
+  outline-offset: 2px;
 }
 
 button {
+  font-family: inherit;
   font-size: 0.95rem;
-  padding: 0.5rem 1rem;
-  border: 1px solid #1a1a1a;
-  background: #1a1a1a;
+  font-weight: 500;
+  padding: 0.6rem 1.3rem;
+  border: 1px solid var(--cor-acento);
+  background: var(--cor-acento);
   color: #ffffff;
-  border-radius: 4px;
+  border-radius: var(--raio);
   cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--cor-acento-escuro);
+  border-color: var(--cor-acento-escuro);
 }
 
 button:disabled {
-  opacity: 0.5;
-  cursor: default;
+  background: var(--cor-linha-alt);
+  border-color: var(--cor-borda);
+  color: var(--cor-texto-suave);
+  cursor: not-allowed;
 }
 
 #status {
-  min-height: 1.25rem;
-  color: #555555;
-  margin: 0 0 1rem 0;
+  min-height: 1.3rem;
+  color: var(--cor-texto-suave);
+  font-size: 0.92rem;
+  margin: 0 0 1rem 0.1rem;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
+  background: var(--cor-fundo-painel);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio);
+  overflow: hidden;
 }
 
 th,
 td {
   text-align: left;
-  padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid #dddddd;
+  padding: 0.65rem 0.8rem;
   vertical-align: top;
 }
 
 th {
-  border-bottom: 2px solid #1a1a1a;
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--cor-texto-suave);
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+tbody tr:nth-child(even) {
+  background: var(--cor-linha-alt);
+}
+
+tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--cor-borda);
 }
 
 a {
-  color: #1a1a1a;
+  color: var(--cor-acento);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.badge--ok {
+  background: color-mix(in srgb, var(--cor-status-ok) 14%, white);
+  color: var(--cor-status-ok);
+}
+
+.badge--neutro {
+  background: color-mix(in srgb, var(--cor-status-neutro) 16%, white);
+  color: var(--cor-status-neutro);
+}
+
+.badge--alerta {
+  background: color-mix(in srgb, var(--cor-status-alerta) 16%, white);
+  color: var(--cor-status-alerta);
+}
+
+@media (max-width: 620px) {
+  .painel-busca {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  button {
+    width: 100%;
+  }
 }
