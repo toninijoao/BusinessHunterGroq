@@ -1,4 +1,4 @@
-ollama
+groq
 requests
 python-dotenv
 supabase

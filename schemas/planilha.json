@@ -135,5 +135,6 @@
         "stack_sugerida",
         "fontes",
         "observacoes"
-    ]
+    ],
+    "additionalProperties": false
 }

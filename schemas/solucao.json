@@ -29,7 +29,8 @@
                     "page",
                     "purpose",
                     "features"
-                ]
+                ],
+                "additionalProperties": false
             }
         },
         "core_features": {
@@ -82,5 +83,6 @@
         "saas_opportunity",
         "suggested_stack",
         "reasoning"
-    ]
+    ],
+    "additionalProperties": false
 }

@@ -68,11 +68,13 @@
                     "website_status",
                     "website_confidence",
                     "sources"
-                ]
+                ],
+                "additionalProperties": false
             }
         }
     },
     "required": [
         "empresas"
-    ]
+    ],
+    "additionalProperties": false
 }

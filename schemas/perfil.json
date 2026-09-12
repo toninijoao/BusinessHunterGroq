@@ -105,5 +105,6 @@
         "informacoes_relevantes",
         "fontes",
         "observacoes"
-    ]
+    ],
+    "additionalProperties": false
 }
