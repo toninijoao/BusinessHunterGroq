@@ -207,6 +207,10 @@ function renderizarLinha(item: ResultadoItem): void {
   corpoTabela!.appendChild(linha);
 }
 
+function aguardar(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function buscarCandidatasDoSegmento(
   cidade: string,
   estado: string,
@@ -284,6 +288,10 @@ async function iniciarBusca(): Promise<void> {
       let candidatas: Candidata[] = [];
 
       try {
+        if (i > 0) {
+          await aguardar(1200);
+        }
+
         candidatas = await buscarCandidatasDoSegmento(cidade, estado, segmento);
         debugLogAcumulado.push(
           `${prefixoSegmento}: ${candidatas.length} candidata(s) encontrada(s)`

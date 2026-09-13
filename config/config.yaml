@@ -1,11 +1,11 @@
 quantidade_empresas: 20
 
 segmentos:
- - clínicas
- - estadias(estilo airbnb)
+ - clínicas odontológicas
  - barbearias
+ - salões de beleza
+ - academias
+ - pet shops
  - imobiliárias
- - hotéis
- - lojas
- - empresas de serviço
- - empresas B2b
+ - oficinas mecânicas
+ - óticas
