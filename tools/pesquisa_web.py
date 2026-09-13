@@ -1,5 +1,6 @@
 import re
 import json
+import time
 import requests
 
 
@@ -60,7 +61,16 @@ MAPEAMENTO_CATEGORIAS = {
     "padarias": ['["shop"="bakery"]'],
 
     "pet shop": ['["shop"="pet"]'],
-    "pet shops": ['["shop"="pet"]']
+    "pet shops": ['["shop"="pet"]'],
+
+    "imobiliária": ['["office"="estate_agent"]'],
+    "imobiliárias": ['["office"="estate_agent"]'],
+
+    "oficina mecânica": ['["shop"="car_repair"]'],
+    "oficinas mecânicas": ['["shop"="car_repair"]'],
+
+    "ótica": ['["shop"="optician"]'],
+    "óticas": ['["shop"="optician"]']
 }
 
 
@@ -89,27 +99,18 @@ def normalizar_localizacao(localizacao: str) -> str:
     Remove informações estaduais adicionadas ao nome da cidade.
 
     Exemplo:
-    "Cornélio Procópio PR"
-    -> "Cornélio Procópio"
-
-    "Cornélio Procópio Paraná"
-    -> "Cornélio Procópio"
+    "Piraju - SP" -> "Piraju"
+    "Piraju SP" -> "Piraju"
+    "Cornélio Procópio - PR" -> "Cornélio Procópio"
     """
 
     resultado = localizacao.strip()
 
+    # Remove um sufixo de UF (duas letras maiúsculas) com ou sem hífen.
     resultado = re.sub(
-        r"\s*-\s*(PR|Paraná)\s*$",
+        r"\s*-?\s*[A-Z]{2}\s*$",
         "",
-        resultado,
-        flags=re.IGNORECASE
-    )
-
-    resultado = re.sub(
-        r"\s+(PR|Paraná)\s*$",
-        "",
-        resultado,
-        flags=re.IGNORECASE
+        resultado
     )
 
     return resultado.strip()
@@ -283,6 +284,8 @@ def pesquisar_web(
     for url in OVERPASS_URLS:
 
         try:
+            print(f"[pesquisar_web] tentando espelho: {url}", flush=True)
+
             response = requests.post(
                 url,
                 data={
@@ -297,6 +300,7 @@ def pesquisar_web(
             break
 
         except requests.exceptions.Timeout as error:
+            print(f"[pesquisar_web] timeout em {url}", flush=True)
             ultimo_erro = error
             continue
 
@@ -305,8 +309,17 @@ def pesquisar_web(
             # trocar de espelho.
             status = error.response.status_code if error.response else None
 
+            print(
+                f"[pesquisar_web] erro HTTP {status} em {url}",
+                flush=True
+            )
+
             if status in (429, 502, 503, 504):
                 ultimo_erro = error
+
+                if status == 429:
+                    time.sleep(1)
+
                 continue
 
             raise RuntimeError(
@@ -314,6 +327,7 @@ def pesquisar_web(
             )
 
         except requests.exceptions.RequestException as error:
+            print(f"[pesquisar_web] falha de rede em {url}: {error}", flush=True)
             ultimo_erro = error
             continue
 
