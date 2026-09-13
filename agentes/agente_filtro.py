@@ -11,8 +11,23 @@ from tools.registro import formato_openai
 
 load_dotenv()
 
-client = Groq()
+_client: Groq | None = None
 model = "openai/gpt-oss-120b"
+
+
+def obter_client() -> Groq:
+    """
+    Cria o cliente da Groq só na primeira vez que for usado.
+    Se a chave GROQ_API_KEY tiver algum problema, isso só
+    quebra quem realmente chama a Groq, e não a importação
+    do módulo inteiro (o que derrubaria rotas que nem usam IA).
+    """
+    global _client
+
+    if _client is None:
+        _client = Groq()
+
+    return _client
 
 base_dir = Path(__file__).resolve().parent.parent
 
@@ -87,7 +102,7 @@ Empresa:
                 "iteracoes sem concluir a tarefa."
             )
 
-        response = client.chat.completions.create(
+        response = obter_client().chat.completions.create(
             model=model,
             messages=messages,
             tools=tools
@@ -150,7 +165,7 @@ Empresa:
         }
     ]
 
-    resposta_final = client.chat.completions.create(
+    resposta_final = obter_client().chat.completions.create(
         model=model,
         messages=mensagens_finais,
         response_format={
