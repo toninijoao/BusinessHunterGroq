@@ -14,6 +14,10 @@ from orquestrador.orquestrador import (
     criar_tarefa,
     executar_pipeline
 )
+from orquestrador.candidatos import listar_candidatas, processar_candidata
+from agentes.agente_filtro import executar_filtro
+from agentes.agente_arquiteto import executar_arquiteto
+from agentes.agente_planilha import executar_planilha
 
 
 app = FastAPI(title="Business Hunter API")
@@ -32,6 +36,7 @@ app.add_middleware(
 class ExecutarRequest(BaseModel):
     cidade: str
     estado: str = ""
+    segmento: str | None = None
 
 
 @app.get("/api/health")
@@ -39,13 +44,108 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/config")
+def config_publica():
+    """
+    Expõe a lista de segmentos e a quantidade configurada, pra o
+    frontend saber por quais segmentos iterar sem duplicar essa
+    lista no código do TypeScript.
+    """
+
+    config = carregar_config()
+
+    return {
+        "segmentos": config.get("segmentos", []),
+        "quantidade_empresas": config.get("quantidade_empresas", 20)
+    }
+
+
+class ProcessarCandidataRequest(BaseModel):
+    candidata: dict
+    cidade: str
+    estado: str = ""
+
+
+@app.get("/api/candidatas")
+def candidatas(cidade: str, segmento: str, estado: str = ""):
+    """
+    Lista candidatas de UM segmento em UMA cidade, direto via
+    Overpass (sem LLM). Rápido e barato — pensado pra ser chamado
+    uma vez por segmento a partir do frontend.
+    """
+
+    try:
+        lista = listar_candidatas(
+            cidade=cidade,
+            estado=estado,
+            segmento=segmento
+        )
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+    return {"candidatas": lista}
+
+
+@app.post("/api/processar_candidata")
+def processar(payload: ProcessarCandidataRequest):
+    """
+    Processa UMA candidata: verifica se já existe, verifica se tem
+    site (decisão determinística, sem LLM) e, se aceita, gera
+    perfil/solução/planilha (essas três etapas usam LLM) e salva.
+    Pensado pra ser chamado uma vez por candidata, permitindo ao
+    frontend mostrar cada empresa assim que ela é aceita.
+    """
+
+    try:
+        resultado = processar_candidata(
+            payload.candidata,
+            cidade=payload.cidade,
+            estado=payload.estado
+        )
+
+        if not resultado.get("aceita"):
+            return resultado
+
+        empresa = resultado["empresa"]
+
+        try:
+            perfil = executar_filtro(empresa)
+            solucao = executar_arquiteto(perfil)
+            dados_planilha = executar_planilha(empresa, perfil, solucao)
+
+            resultado["perfil"] = perfil
+            resultado["solucao"] = solucao
+            resultado["planilha"] = dados_planilha
+
+        except Exception as error:
+            # A empresa já foi aceita e salva - só o enriquecimento
+            # (perfil/solução/planilha) falhou. Devolve a empresa
+            # mesmo assim, com o erro anotado.
+            resultado["erro_enriquecimento"] = str(error)
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+    return resultado
+
+
 @app.post("/api/executar")
 def executar(payload: ExecutarRequest):
     """
-    Roda o pipeline completo (Hunter -> Filtro -> Arquiteto -> Planilha)
-    para a cidade escolhida pelo usuário e retorna o resultado.
-    Pode demorar até alguns minutos dependendo da quantidade de
-    empresas configurada em config/config.yaml.
+    Roda o pipeline (Hunter -> Filtro -> Arquiteto -> Planilha) para a
+    cidade escolhida. Se 'segmento' for informado, pesquisa somente
+    esse segmento (chamada rápida, pensada pra ser feita uma vez por
+    segmento a partir do frontend, evitando estourar o limite de
+    tempo de uma função serverless). Se omitido, roda todos os
+    segmentos configurados numa única chamada (uso local/CLI, sem
+    limite de tempo).
     """
 
     try:
@@ -54,12 +154,19 @@ def executar(payload: ExecutarRequest):
         tarefa = criar_tarefa(
             config,
             cidade=payload.cidade,
-            estado=payload.estado
+            estado=payload.estado,
+            segmento=payload.segmento
+        )
+
+        segmentos_para_rodar = (
+            [payload.segmento]
+            if payload.segmento
+            else config.get("segmentos")
         )
 
         resultado = executar_pipeline(
             tarefa,
-            segmentos=config.get("segmentos"),
+            segmentos=segmentos_para_rodar,
             cidade=payload.cidade
         )
 
