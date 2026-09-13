@@ -6,25 +6,41 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_KEY")
+_supabase: Client | None = None
 
 
-if not supabase_url:
-    raise ValueError(
-        "SUPABASE_URL não encontrada no arquivo .env"
-    )
+def obter_supabase() -> Client:
+    """
+    Cria o cliente do Supabase só na primeira vez que for usado.
+    Se SUPABASE_URL/SUPABASE_KEY tiverem algum problema, isso só
+    quebra quem realmente precisa do banco, e não a importação do
+    módulo inteiro (o que derrubaria rotas que nem usam banco de
+    dados, como /api/config e /api/health).
+    """
 
-if not supabase_key:
-    raise ValueError(
-        "SUPABASE_KEY não encontrada no arquivo .env"
-    )
+    global _supabase
 
+    if _supabase is None:
 
-supabase: Client = create_client(
-    supabase_url,
-    supabase_key
-)
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+
+        if not supabase_url:
+            raise ValueError(
+                "SUPABASE_URL não encontrada nas variáveis de ambiente."
+            )
+
+        if not supabase_key:
+            raise ValueError(
+                "SUPABASE_KEY não encontrada nas variáveis de ambiente."
+            )
+
+        _supabase = create_client(
+            supabase_url,
+            supabase_key
+        )
+
+    return _supabase
 
 
 def buscar_empresa(
@@ -34,7 +50,7 @@ def buscar_empresa(
 ) -> dict:
 
     query = (
-        supabase
+        obter_supabase()
         .table("companies")
         .select("*")
         .ilike("name", nome)
@@ -74,6 +90,8 @@ def salvar_empresa(empresa: dict) -> dict:
         "website_confidence": empresa.get("website_confidence"),
         "sources": empresa.get("sources")
     }
+
+    supabase = obter_supabase()
 
     try:
         response = (
