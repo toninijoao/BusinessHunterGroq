@@ -19,12 +19,23 @@ interface ResultadoItem {
   erro?: string;
 }
 
-interface ResultadoPipeline {
-  quantidade_encontrada: number;
-  quantidade_processada: number;
-  resultados: ResultadoItem[];
-  erro_hunter?: string | null;
-  debug_log?: string[];
+interface Candidata {
+  nome: string;
+  endereco: string;
+  telefone: string;
+  site: string;
+}
+
+interface RespostaCandidatas {
+  candidatas: Candidata[];
+}
+
+interface RespostaProcessarCandidata {
+  aceita: boolean;
+  nome?: string;
+  motivo?: string;
+  empresa?: Empresa;
+  erro_enriquecimento?: string;
 }
 
 interface EstadoIBGE {
@@ -116,12 +127,19 @@ function limparTabela(): void {
   corpoTabela!.innerHTML = "";
 }
 
-function renderizarDebugLog(resultado: ResultadoPipeline): void {
+interface ConfigPublica {
+  segmentos: string[];
+  quantidade_empresas: number;
+}
+
+let debugLogAcumulado: string[] = [];
+
+function renderizarDebugLog(): void {
 
   const anterior = document.querySelector("#debug-log");
   anterior?.remove();
 
-  if (!resultado.debug_log || resultado.debug_log.length === 0) {
+  if (debugLogAcumulado.length === 0) {
     return;
   }
 
@@ -129,20 +147,11 @@ function renderizarDebugLog(resultado: ResultadoPipeline): void {
   detalhes.id = "debug-log";
 
   const resumo = document.createElement("summary");
-  resumo.textContent = resultado.erro_hunter
-    ? "Ver detalhes técnicos (um erro ocorreu)"
-    : "Ver detalhes técnicos da busca";
+  resumo.textContent = "Ver detalhes técnicos da busca";
   detalhes.appendChild(resumo);
 
-  if (resultado.erro_hunter) {
-    const erro = document.createElement("p");
-    erro.className = "debug-erro";
-    erro.textContent = resultado.erro_hunter;
-    detalhes.appendChild(erro);
-  }
-
   const pre = document.createElement("pre");
-  pre.textContent = resultado.debug_log.join("\n");
+  pre.textContent = debugLogAcumulado.join("\n");
   detalhes.appendChild(pre);
 
   elementoStatus!.insertAdjacentElement("afterend", detalhes);
@@ -198,6 +207,47 @@ function renderizarLinha(item: ResultadoItem): void {
   corpoTabela!.appendChild(linha);
 }
 
+async function buscarCandidatasDoSegmento(
+  cidade: string,
+  estado: string,
+  segmento: string
+): Promise<Candidata[]> {
+
+  const parametros = new URLSearchParams({ cidade, estado, segmento });
+
+  const resposta = await fetch(`/api/candidatas?${parametros.toString()}`);
+
+  if (!resposta.ok) {
+    const corpo = await resposta.text();
+    throw new Error(`${resposta.status} - ${corpo}`);
+  }
+
+  const dados: RespostaCandidatas = await resposta.json();
+  return dados.candidatas;
+}
+
+async function processarUmaCandidata(
+  candidata: Candidata,
+  cidade: string,
+  estado: string
+): Promise<RespostaProcessarCandidata> {
+
+  const resposta = await fetch("/api/processar_candidata", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ candidata, cidade, estado })
+  });
+
+  if (!resposta.ok) {
+    const corpo = await resposta.text();
+    throw new Error(`${resposta.status} - ${corpo}`);
+  }
+
+  return resposta.json();
+}
+
 async function iniciarBusca(): Promise<void> {
   const cidade = selectCidade!.value;
   const estado = selectEstado!.value;
@@ -207,40 +257,87 @@ async function iniciarBusca(): Promise<void> {
   }
 
   botao!.disabled = true;
-  elementoStatus!.textContent = `Buscando em ${cidade} - ${estado}... isso pode levar alguns minutos.`;
   limparTabela();
-  document.querySelector("#debug-log")?.remove();
+  debugLogAcumulado = [];
+  renderizarDebugLog();
+
+  let totalAceitas = 0;
 
   try {
-    const resposta = await fetch("/api/executar", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ cidade, estado })
-    });
+    const respostaConfig = await fetch("/api/config");
 
-    if (!resposta.ok) {
-      const corpo = await resposta.text();
-      throw new Error(`${resposta.status} - ${corpo}`);
+    if (!respostaConfig.ok) {
+      throw new Error("Não foi possível carregar a configuração da busca.");
     }
 
-    const resultado: ResultadoPipeline = await resposta.json();
+    const config: ConfigPublica = await respostaConfig.json();
+    const segmentos = config.segmentos;
 
-    renderizarDebugLog(resultado);
+    for (let i = 0; i < segmentos.length; i++) {
+      const segmento = segmentos[i];
+      const prefixoSegmento = `[${i + 1}/${segmentos.length}] ${segmento}`;
 
-    if (resultado.resultados.length === 0) {
-      elementoStatus!.textContent = resultado.erro_hunter
-        ? "A busca não foi concluída — veja os detalhes técnicos abaixo."
-        : "Nenhuma empresa encontrada.";
-      return;
+      elementoStatus!.textContent =
+        `Encontradas: ${totalAceitas} — buscando candidatas de ${segmento} ` +
+        `(${i + 1}/${segmentos.length}) em ${cidade}...`;
+
+      let candidatas: Candidata[] = [];
+
+      try {
+        candidatas = await buscarCandidatasDoSegmento(cidade, estado, segmento);
+        debugLogAcumulado.push(
+          `${prefixoSegmento}: ${candidatas.length} candidata(s) encontrada(s)`
+        );
+
+      } catch (erro) {
+        debugLogAcumulado.push(
+          `${prefixoSegmento}: falha ao buscar candidatas — ${(erro as Error).message}`
+        );
+        renderizarDebugLog();
+        continue;
+      }
+
+      for (let j = 0; j < candidatas.length; j++) {
+        const candidata = candidatas[j];
+
+        elementoStatus!.textContent =
+          `Encontradas: ${totalAceitas} — verificando "${candidata.nome}" ` +
+          `(${segmento}, candidata ${j + 1}/${candidatas.length})...`;
+
+        try {
+          const resultado = await processarUmaCandidata(candidata, cidade, estado);
+
+          if (resultado.aceita && resultado.empresa) {
+            totalAceitas += 1;
+            renderizarLinha({ empresa: resultado.empresa });
+            debugLogAcumulado.push(
+              `${prefixoSegmento}: aceita "${resultado.nome ?? candidata.nome}"` +
+              (resultado.erro_enriquecimento
+                ? ` (perfil/solução falhou: ${resultado.erro_enriquecimento})`
+                : "")
+            );
+
+          } else {
+            debugLogAcumulado.push(
+              `${prefixoSegmento}: rejeitada "${resultado.nome ?? candidata.nome}" ` +
+              `— ${resultado.motivo}`
+            );
+          }
+
+        } catch (erro) {
+          debugLogAcumulado.push(
+            `${prefixoSegmento}: erro em "${candidata.nome}" — ${(erro as Error).message}`
+          );
+        }
+
+        renderizarDebugLog();
+      }
     }
-
-    resultado.resultados.forEach(renderizarLinha);
 
     elementoStatus!.textContent =
-      `${resultado.quantidade_encontrada} empresa(s) encontrada(s), ` +
-      `${resultado.quantidade_processada} processada(s).`;
+      totalAceitas > 0
+        ? `Busca concluída — ${totalAceitas} empresa(s) encontrada(s) em ${cidade}.`
+        : `Busca concluída — nenhuma empresa encontrada em ${cidade}.`;
 
   } catch (erro) {
     elementoStatus!.textContent = `Falha ao executar a busca: ${(erro as Error).message}`;
