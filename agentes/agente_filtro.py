@@ -165,20 +165,35 @@ Empresa:
         }
     ]
 
-    resposta_final = obter_client().chat.completions.create(
-        model=model,
-        messages=mensagens_finais,
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "perfil_negocio",
-                "strict": True,
-                "schema": schema
-            }
-        }
-    )
+    ultimo_erro: Exception | None = None
 
-    return extrair_resultado(resposta_final)
+    for tentativa in range(2):
+
+        try:
+            resposta_final = obter_client().chat.completions.create(
+                model=model,
+                messages=mensagens_finais,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "perfil_negocio",
+                        "strict": True,
+                        "schema": schema
+                    }
+                }
+            )
+
+            return extrair_resultado(resposta_final)
+
+        except Exception as error:
+            # O modelo ocasionalmente "alucina" uma chamada de tool
+            # mesmo sem nenhuma tool disponível nessa chamada final.
+            # Isso não é determinístico - tentar de novo geralmente
+            # resolve.
+            ultimo_erro = error
+            continue
+
+    raise ultimo_erro
 
 
 def extrair_resultado(response) -> dict:
