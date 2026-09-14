@@ -85,7 +85,6 @@ async function carregarEstados(): Promise<void> {
       opcao.textContent = `${estado.nome} (${estado.sigla})`;
       selectEstado!.appendChild(opcao);
     });
-
   } catch {
     selectEstado!.innerHTML = '<option value="">Falha ao carregar estados</option>';
   }
@@ -110,10 +109,8 @@ async function carregarCidades(uf: string): Promise<void> {
     });
 
     selectCidade!.disabled = false;
-
   } catch {
     selectCidade!.innerHTML = '<option value="">Falha ao carregar cidades</option>';
-
   } finally {
     atualizarBotao();
   }
@@ -128,14 +125,12 @@ function limparTabela(): void {
 }
 
 interface ConfigPublica {
-  segmentos: string[];
   quantidade_empresas: number;
 }
 
 let debugLogAcumulado: string[] = [];
 
 function renderizarDebugLog(): void {
-
   const anterior = document.querySelector("#debug-log");
   anterior?.remove();
 
@@ -207,17 +202,11 @@ function renderizarLinha(item: ResultadoItem): void {
   corpoTabela!.appendChild(linha);
 }
 
-function aguardar(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function buscarCandidatasDoSegmento(
+async function buscarCandidatasDaCidade(
   cidade: string,
-  estado: string,
-  segmento: string
+  estado: string
 ): Promise<Candidata[]> {
-
-  const parametros = new URLSearchParams({ cidade, estado, segmento });
+  const parametros = new URLSearchParams({ cidade, estado });
 
   const resposta = await fetch(`/api/candidatas?${parametros.toString()}`);
 
@@ -235,7 +224,6 @@ async function processarUmaCandidata(
   cidade: string,
   estado: string
 ): Promise<RespostaProcessarCandidata> {
-
   const resposta = await fetch("/api/processar_candidata", {
     method: "POST",
     headers: {
@@ -275,81 +263,66 @@ async function iniciarBusca(): Promise<void> {
     }
 
     const config: ConfigPublica = await respostaConfig.json();
-    const segmentos = config.segmentos;
+    const alvo = config.quantidade_empresas;
 
-    for (let i = 0; i < segmentos.length; i++) {
-      const segmento = segmentos[i];
-      const prefixoSegmento = `[${i + 1}/${segmentos.length}] ${segmento}`;
+    elementoStatus!.textContent = `Buscando candidatas em ${cidade}...`;
 
-      elementoStatus!.textContent =
-        `Encontradas: ${totalAceitas} — buscando candidatas de ${segmento} ` +
-        `(${i + 1}/${segmentos.length}) em ${cidade}...`;
+    const candidatas = await buscarCandidatasDaCidade(cidade, estado);
 
-      let candidatas: Candidata[] = [];
+    debugLogAcumulado.push(
+      `${candidatas.length} candidata(s) encontrada(s) no total em ${cidade}.`
+    );
+    renderizarDebugLog();
 
-      try {
-        if (i > 0) {
-          await aguardar(1200);
-        }
-
-        candidatas = await buscarCandidatasDoSegmento(cidade, estado, segmento);
-        debugLogAcumulado.push(
-          `${prefixoSegmento}: ${candidatas.length} candidata(s) encontrada(s)`
-        );
-
-      } catch (erro) {
-        debugLogAcumulado.push(
-          `${prefixoSegmento}: falha ao buscar candidatas — ${(erro as Error).message}`
-        );
-        renderizarDebugLog();
-        continue;
+    for (let i = 0; i < candidatas.length; i++) {
+      if (totalAceitas >= alvo) {
+        debugLogAcumulado.push(`Meta de ${alvo} empresas atingida, parando.`);
+        break;
       }
 
-      for (let j = 0; j < candidatas.length; j++) {
-        const candidata = candidatas[j];
+      const candidata = candidatas[i];
 
-        elementoStatus!.textContent =
-          `Encontradas: ${totalAceitas} — verificando "${candidata.nome}" ` +
-          `(${segmento}, candidata ${j + 1}/${candidatas.length})...`;
+      elementoStatus!.textContent =
+        `Encontradas: ${totalAceitas}/${alvo} — verificando "${candidata.nome}" ` +
+        `(candidata ${i + 1}/${candidatas.length})...`;
 
-        try {
-          const resultado = await processarUmaCandidata(candidata, cidade, estado);
+      try {
+        const resultado = await processarUmaCandidata(
+          candidata,
+          cidade,
+          estado
+        );
 
-          if (resultado.aceita && resultado.empresa) {
-            totalAceitas += 1;
-            renderizarLinha({ empresa: resultado.empresa });
-            debugLogAcumulado.push(
-              `${prefixoSegmento}: aceita "${resultado.nome ?? candidata.nome}"` +
+        if (resultado.aceita && resultado.empresa) {
+          totalAceitas += 1;
+          renderizarLinha({ empresa: resultado.empresa });
+
+          debugLogAcumulado.push(
+            `Aceita "${resultado.nome ?? candidata.nome}"` +
               (resultado.erro_enriquecimento
                 ? ` (perfil/solução falhou: ${resultado.erro_enriquecimento})`
                 : "")
-            );
-
-          } else {
-            debugLogAcumulado.push(
-              `${prefixoSegmento}: rejeitada "${resultado.nome ?? candidata.nome}" ` +
-              `— ${resultado.motivo}`
-            );
-          }
-
-        } catch (erro) {
+          );
+        } else {
           debugLogAcumulado.push(
-            `${prefixoSegmento}: erro em "${candidata.nome}" — ${(erro as Error).message}`
+            `Rejeitada "${resultado.nome ?? candidata.nome}" — ${resultado.motivo}`
           );
         }
-
-        renderizarDebugLog();
+      } catch (erro) {
+        debugLogAcumulado.push(
+          `Erro em "${candidata.nome}" — ${(erro as Error).message}`
+        );
       }
+
+      renderizarDebugLog();
     }
 
     elementoStatus!.textContent =
       totalAceitas > 0
-        ? `Busca concluída — ${totalAceitas} empresa(s) encontrada(s) em ${cidade}.`
+        ? `Busca concluída — ${totalAceitas}/${alvo} empresa(s) encontrada(s) em ${cidade}.`
         : `Busca concluída — nenhuma empresa encontrada em ${cidade}.`;
-
   } catch (erro) {
     elementoStatus!.textContent = `Falha ao executar a busca: ${(erro as Error).message}`;
-
   } finally {
     atualizarBotao();
   }
