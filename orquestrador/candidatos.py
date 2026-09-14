@@ -1,35 +1,18 @@
 from urllib.parse import quote
 
-from tools.pesquisa_web import pesquisar_web
+from tools.pesquisa_web import buscar_candidatas_amplas
 from tools.checkagem_site import verificar_site
 from tools.database import buscar_empresa, salvar_empresa
 
 
-def listar_candidatas(
-    cidade: str,
-    estado: str,
-    segmento: str,
-    quantidade: int = 15
-) -> list[dict]:
+def listar_candidatas(cidade: str) -> list[dict]:
     """
-    Busca candidatas de um unico segmento em uma unica cidade,
-    direto via Overpass (sem nenhuma chamada a LLM - rapido e
-    deterministico).
-
-    Importante: a query de busca usa só o nome da cidade (sem o
-    estado). O Overpass casa a área pelo nome exato no OpenStreetMap
-    ("Piraju", não "Piraju - SP") - concatenar o estado faz a busca
-    nunca encontrar a área e sempre retornar vazio.
+    Busca candidatas de QUALQUER tipo de negócio numa cidade,
+    direto via Overpass (sem nenhuma chamada a LLM, sem categoria
+    fixa - rápido e determinístico).
     """
 
-    query = f"{segmento} em {cidade}"
-
-    resultado = pesquisar_web(
-        query=query,
-        quantidade=quantidade
-    )
-
-    return resultado.get("resultados", [])
+    return buscar_candidatas_amplas(cidade)
 
 
 def _montar_link_maps(nome: str, cidade: str, estado: str) -> str:

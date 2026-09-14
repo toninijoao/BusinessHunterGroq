@@ -106,7 +106,6 @@ def normalizar_localizacao(localizacao: str) -> str:
 
     resultado = localizacao.strip()
 
-    # Remove um sufixo de UF (duas letras maiúsculas) com ou sem hífen.
     resultado = re.sub(
         r"\s*-?\s*[A-Z]{2}\s*$",
         "",
@@ -245,6 +244,162 @@ def montar_endereco(tags: dict) -> str:
     return ", ".join(partes)
 
 
+def _executar_overpass(overpass_query: str) -> list[dict]:
+    """
+    Executa uma query Overpass já pronta (com retry entre espelhos)
+    e devolve a lista de candidatas já no formato usado pelo resto
+    do projeto (nome/endereco/telefone/site).
+    """
+
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json"
+    }
+
+    response = None
+    ultimo_erro = None
+
+    for url in OVERPASS_URLS:
+
+        try:
+            print(f"[overpass] tentando espelho: {url}", flush=True)
+
+            response = requests.post(
+                url,
+                data={
+                    "data": overpass_query
+                },
+                headers=headers,
+                timeout=15
+            )
+
+            response.raise_for_status()
+            ultimo_erro = None
+            break
+
+        except requests.exceptions.Timeout as error:
+            print(f"[overpass] timeout em {url}", flush=True)
+            ultimo_erro = error
+            continue
+
+        except requests.exceptions.HTTPError as error:
+            status = error.response.status_code if error.response else None
+
+            print(
+                f"[overpass] erro HTTP {status} em {url}",
+                flush=True
+            )
+
+            if status in (429, 502, 503, 504):
+                ultimo_erro = error
+
+                if status == 429:
+                    time.sleep(1)
+
+                continue
+
+            raise RuntimeError(
+                f"Erro ao consultar o Overpass API ({url}): {error}"
+            )
+
+        except requests.exceptions.RequestException as error:
+            print(f"[overpass] falha de rede em {url}: {error}", flush=True)
+            ultimo_erro = error
+            continue
+
+    if ultimo_erro is not None:
+        raise RuntimeError(
+            "Todos os espelhos do Overpass API falharam ou "
+            f"estão sobrecarregados. Último erro: {ultimo_erro}"
+        )
+
+    data = response.json()
+
+    resultados = []
+
+    for elemento in data.get("elements", []):
+
+        tags = elemento.get("tags", {})
+
+        resultados.append({
+            "nome": tags.get("name", ""),
+            "endereco": montar_endereco(tags),
+            "telefone": tags.get("phone", ""),
+            "site": tags.get("website", "")
+        })
+
+    return resultados
+
+
+TAGS_NEGOCIOS_LOCAIS = [
+    'nwr["shop"](area.searchArea);',
+    'nwr["office"](area.searchArea);',
+    'nwr["craft"](area.searchArea);',
+    (
+        'nwr["amenity"~"^(restaurant|cafe|bar|fast_food|pharmacy|'
+        'dentist|clinic|veterinary|driving_school)$"](area.searchArea);'
+    ),
+    'nwr["leisure"~"^(fitness_centre|sports_centre)$"](area.searchArea);',
+    (
+        'nwr["tourism"~"^(hotel|hostel|guest_house|apartment)$"]'
+        '(area.searchArea);'
+    )
+]
+
+
+def construir_query_overpass_ampla(
+    cidade: str,
+    limite: int = 200
+) -> str:
+    """
+    Monta uma única query que cobre uma variedade ampla de tipos de
+    negócio numa cidade, ao invés de uma categoria fixa por vez.
+    """
+
+    cidade_normalizada = normalizar_localizacao(cidade)
+
+    consultas_elementos = "\n".join(TAGS_NEGOCIOS_LOCAIS)
+
+    return f"""
+[out:json][timeout:25];
+
+area["name"="{cidade_normalizada}"]["boundary"="administrative"]->.searchArea;
+
+(
+{consultas_elementos}
+);
+
+out center tags {limite};
+""".strip()
+
+
+def buscar_candidatas_amplas(
+    cidade: str,
+    limite: int = 200
+) -> list[dict]:
+    """
+    Busca candidatas de QUALQUER tipo de negócio numa cidade, numa
+    única chamada ao Overpass - sem categoria fixa.
+    """
+
+    if not cidade or not cidade.strip():
+        raise ValueError(
+            "A cidade não pode estar vazia."
+        )
+
+    overpass_query = construir_query_overpass_ampla(
+        cidade,
+        limite=limite
+    )
+
+    resultados = _executar_overpass(overpass_query)
+
+    return [
+        r for r in resultados
+        if r.get("nome", "").strip()
+    ]
+
+
 def pesquisar_web(
     query: str,
     quantidade: int = 10
@@ -270,97 +425,7 @@ def pesquisar_web(
         localizacao
     )
 
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "application/json"
-    }
-
-    response = None
-    ultimo_erro = None
-
-    # Timeout e tentativas enxutos de propósito: no Hobby da Vercel a
-    # função inteira tem só 300s de orçamento. Pior caso aqui:
-    # 3 espelhos x 1 tentativa x 15s = 45s, contra os 360s de antes.
-    for url in OVERPASS_URLS:
-
-        try:
-            print(f"[pesquisar_web] tentando espelho: {url}", flush=True)
-
-            response = requests.post(
-                url,
-                data={
-                    "data": overpass_query
-                },
-                headers=headers,
-                timeout=15
-            )
-
-            response.raise_for_status()
-            ultimo_erro = None
-            break
-
-        except requests.exceptions.Timeout as error:
-            print(f"[pesquisar_web] timeout em {url}", flush=True)
-            ultimo_erro = error
-            continue
-
-        except requests.exceptions.HTTPError as error:
-            # 429 (rate limit) e 504 (servidor ocupado) valem
-            # trocar de espelho.
-            status = error.response.status_code if error.response else None
-
-            print(
-                f"[pesquisar_web] erro HTTP {status} em {url}",
-                flush=True
-            )
-
-            if status in (429, 502, 503, 504):
-                ultimo_erro = error
-
-                if status == 429:
-                    time.sleep(1)
-
-                continue
-
-            raise RuntimeError(
-                f"Erro ao consultar o Overpass API ({url}): {error}"
-            )
-
-        except requests.exceptions.RequestException as error:
-            print(f"[pesquisar_web] falha de rede em {url}: {error}", flush=True)
-            ultimo_erro = error
-            continue
-
-    if ultimo_erro is not None:
-        raise RuntimeError(
-            "Todos os espelhos do Overpass API falharam ou "
-            f"estão sobrecarregados. Último erro: {ultimo_erro}"
-        )
-
-    data = response.json()
-
-    print("\nRESULTADO BRUTO DO OVERPASS:")
-    print(
-        json.dumps(
-            data,
-            ensure_ascii=False,
-            indent=2
-        )
-    )
-
-    resultados = []
-
-    for elemento in data.get("elements", []):
-
-        tags = elemento.get("tags", {})
-
-        resultados.append({
-            "nome": tags.get("name", ""),
-            "endereco": montar_endereco(tags),
-            "telefone": tags.get("phone", ""),
-            "site": tags.get("website", "")
-        })
-
+    resultados = _executar_overpass(overpass_query)
     resultados = resultados[:quantidade]
 
     return {
