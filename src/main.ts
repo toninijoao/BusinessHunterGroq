@@ -85,6 +85,7 @@ async function carregarEstados(): Promise<void> {
       opcao.textContent = `${estado.nome} (${estado.sigla})`;
       selectEstado!.appendChild(opcao);
     });
+
   } catch {
     selectEstado!.innerHTML = '<option value="">Falha ao carregar estados</option>';
   }
@@ -109,8 +110,10 @@ async function carregarCidades(uf: string): Promise<void> {
     });
 
     selectCidade!.disabled = false;
+
   } catch {
     selectCidade!.innerHTML = '<option value="">Falha ao carregar cidades</option>';
+
   } finally {
     atualizarBotao();
   }
@@ -131,6 +134,7 @@ interface ConfigPublica {
 let debugLogAcumulado: string[] = [];
 
 function renderizarDebugLog(): void {
+
   const anterior = document.querySelector("#debug-log");
   anterior?.remove();
 
@@ -202,21 +206,42 @@ function renderizarLinha(item: ResultadoItem): void {
   corpoTabela!.appendChild(linha);
 }
 
+function aguardar(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function buscarCandidatasDaCidade(
   cidade: string,
   estado: string
 ): Promise<Candidata[]> {
+
   const parametros = new URLSearchParams({ cidade, estado });
+  const url = `/api/candidatas?${parametros.toString()}`;
 
-  const resposta = await fetch(`/api/candidatas?${parametros.toString()}`);
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
 
-  if (!resposta.ok) {
-    const corpo = await resposta.text();
-    throw new Error(`${resposta.status} - ${corpo}`);
+    if (tentativa > 0) {
+      debugLogAcumulado.push(
+        "Overpass falhou na 1ª tentativa, tentando de novo em instantes..."
+      );
+      renderizarDebugLog();
+      await aguardar(3000);
+    }
+
+    const resposta = await fetch(url);
+
+    if (resposta.ok) {
+      const dados: RespostaCandidatas = await resposta.json();
+      return dados.candidatas;
+    }
+
+    if (tentativa === 1) {
+      const corpo = await resposta.text();
+      throw new Error(`${resposta.status} - ${corpo}`);
+    }
   }
 
-  const dados: RespostaCandidatas = await resposta.json();
-  return dados.candidatas;
+  return [];
 }
 
 async function processarUmaCandidata(
@@ -224,6 +249,7 @@ async function processarUmaCandidata(
   cidade: string,
   estado: string
 ): Promise<RespostaProcessarCandidata> {
+
   const resposta = await fetch("/api/processar_candidata", {
     method: "POST",
     headers: {
@@ -275,6 +301,7 @@ async function iniciarBusca(): Promise<void> {
     renderizarDebugLog();
 
     for (let i = 0; i < candidatas.length; i++) {
+
       if (totalAceitas >= alvo) {
         debugLogAcumulado.push(`Meta de ${alvo} empresas atingida, parando.`);
         break;
@@ -287,27 +314,24 @@ async function iniciarBusca(): Promise<void> {
         `(candidata ${i + 1}/${candidatas.length})...`;
 
       try {
-        const resultado = await processarUmaCandidata(
-          candidata,
-          cidade,
-          estado
-        );
+        const resultado = await processarUmaCandidata(candidata, cidade, estado);
 
         if (resultado.aceita && resultado.empresa) {
           totalAceitas += 1;
           renderizarLinha({ empresa: resultado.empresa });
-
           debugLogAcumulado.push(
             `Aceita "${resultado.nome ?? candidata.nome}"` +
-              (resultado.erro_enriquecimento
-                ? ` (perfil/solução falhou: ${resultado.erro_enriquecimento})`
-                : "")
+            (resultado.erro_enriquecimento
+              ? ` (perfil/solução falhou: ${resultado.erro_enriquecimento})`
+              : "")
           );
+
         } else {
           debugLogAcumulado.push(
             `Rejeitada "${resultado.nome ?? candidata.nome}" — ${resultado.motivo}`
           );
         }
+
       } catch (erro) {
         debugLogAcumulado.push(
           `Erro em "${candidata.nome}" — ${(erro as Error).message}`
@@ -321,8 +345,10 @@ async function iniciarBusca(): Promise<void> {
       totalAceitas > 0
         ? `Busca concluída — ${totalAceitas}/${alvo} empresa(s) encontrada(s) em ${cidade}.`
         : `Busca concluída — nenhuma empresa encontrada em ${cidade}.`;
+
   } catch (erro) {
     elementoStatus!.textContent = `Falha ao executar a busca: ${(erro as Error).message}`;
+
   } finally {
     atualizarBotao();
   }

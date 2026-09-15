@@ -106,6 +106,7 @@ def normalizar_localizacao(localizacao: str) -> str:
 
     resultado = localizacao.strip()
 
+    # Remove um sufixo de UF (duas letras maiúsculas) com ou sem hífen.
     resultado = re.sub(
         r"\s*-?\s*[A-Z]{2}\s*$",
         "",
@@ -246,9 +247,10 @@ def montar_endereco(tags: dict) -> str:
 
 def _executar_overpass(overpass_query: str) -> list[dict]:
     """
-    Executa uma query Overpass já pronta (com retry entre espelhos)
-    e devolve a lista de candidatas já no formato usado pelo resto
-    do projeto (nome/endereco/telefone/site).
+    Executa uma query Overpass já pronta (com retry entre espelhos,
+    e uma segunda rodada completa se todos falharem de primeira) e
+    devolve a lista de candidatas já no formato usado pelo resto do
+    projeto (nome/endereco/telefone/site).
     """
 
     headers = {
@@ -259,58 +261,75 @@ def _executar_overpass(overpass_query: str) -> list[dict]:
     response = None
     ultimo_erro = None
 
-    for url in OVERPASS_URLS:
+    # Duas rodadas pelos 3 espelhos, com uma pausa entre elas. O
+    # Overpass público às vezes fica lento em TODOS os espelhos ao
+    # mesmo tempo (picos de uso, atualização de base) - uma segunda
+    # rodada depois de uma pausa curta resolve a maioria desses casos
+    # sem custar caro no orçamento de tempo (300s no Hobby da Vercel).
+    for rodada in range(2):
 
-        try:
-            print(f"[overpass] tentando espelho: {url}", flush=True)
+        if rodada > 0:
+            print("[overpass] 1ª rodada falhou, tentando de novo...", flush=True)
+            time.sleep(3)
 
-            response = requests.post(
-                url,
-                data={
-                    "data": overpass_query
-                },
-                headers=headers,
-                timeout=15
-            )
+        for url in OVERPASS_URLS:
 
-            response.raise_for_status()
-            ultimo_erro = None
-            break
+            try:
+                print(f"[overpass] tentando espelho: {url}", flush=True)
 
-        except requests.exceptions.Timeout as error:
-            print(f"[overpass] timeout em {url}", flush=True)
-            ultimo_erro = error
-            continue
+                response = requests.post(
+                    url,
+                    data={
+                        "data": overpass_query
+                    },
+                    headers=headers,
+                    timeout=15
+                )
 
-        except requests.exceptions.HTTPError as error:
-            status = error.response.status_code if error.response else None
+                response.raise_for_status()
+                ultimo_erro = None
+                break
 
-            print(
-                f"[overpass] erro HTTP {status} em {url}",
-                flush=True
-            )
-
-            if status in (429, 502, 503, 504):
+            except requests.exceptions.Timeout as error:
+                print(f"[overpass] timeout em {url}", flush=True)
                 ultimo_erro = error
-
-                if status == 429:
-                    time.sleep(1)
-
                 continue
 
-            raise RuntimeError(
-                f"Erro ao consultar o Overpass API ({url}): {error}"
-            )
+            except requests.exceptions.HTTPError as error:
+                # 429 (rate limit) e 502/503/504 (servidor ocupado)
+                # valem trocar de espelho.
+                status = error.response.status_code if error.response else None
 
-        except requests.exceptions.RequestException as error:
-            print(f"[overpass] falha de rede em {url}: {error}", flush=True)
-            ultimo_erro = error
-            continue
+                print(
+                    f"[overpass] erro HTTP {status} em {url}",
+                    flush=True
+                )
+
+                if status in (429, 502, 503, 504):
+                    ultimo_erro = error
+
+                    if status == 429:
+                        time.sleep(1)
+
+                    continue
+
+                raise RuntimeError(
+                    f"Erro ao consultar o Overpass API ({url}): {error}"
+                )
+
+            except requests.exceptions.RequestException as error:
+                print(f"[overpass] falha de rede em {url}: {error}", flush=True)
+                ultimo_erro = error
+                continue
+
+        if ultimo_erro is None:
+            break
 
     if ultimo_erro is not None:
         raise RuntimeError(
             "Todos os espelhos do Overpass API falharam ou "
-            f"estão sobrecarregados. Último erro: {ultimo_erro}"
+            f"estão sobrecarregados, em duas tentativas. "
+            f"Último erro: {ultimo_erro}"
         )
 
     data = response.json()
@@ -331,6 +350,10 @@ def _executar_overpass(overpass_query: str) -> list[dict]:
     return resultados
 
 
+# Tags amplas o suficiente pra cobrir a maioria dos pequenos negócios
+# locais, sem depender de mapear cada categoria em português pra uma
+# tag específica. "shop", "office" e "craft" sozinhos (sem valor
+# específico) já casam com centenas de tipos de comércio/serviço.
 TAGS_NEGOCIOS_LOCAIS = [
     'nwr["shop"](area.searchArea);',
     'nwr["office"](area.searchArea);',
@@ -394,6 +417,7 @@ def buscar_candidatas_amplas(
 
     resultados = _executar_overpass(overpass_query)
 
+    # Descarta candidatas sem nome (não dá pra verificar nem salvar).
     return [
         r for r in resultados
         if r.get("nome", "").strip()
