@@ -28,6 +28,9 @@ def _montar_link_maps(nome: str, cidade: str, estado: str) -> str:
     )
 
 
+CATEGORIAS_EXCLUIDAS = {"restaurant", "bar", "bakery", "pharmacy"}
+
+
 def processar_candidata(
     candidata: dict,
     cidade: str,
@@ -35,6 +38,7 @@ def processar_candidata(
 ) -> dict:
     """
     Decide deterministicamente se uma candidata deve ser aceita:
+    - Categoria excluída (restaurante/bar/padaria/farmácia) -> rejeitada.
     - Ja cadastrada -> rejeitada.
     - Tem site (WEBSITE_FOUND) ou evidencia insuficiente
       (WEBSITE_UNCERTAIN) -> rejeitada.
@@ -50,6 +54,15 @@ def processar_candidata(
         return {
             "aceita": False,
             "motivo": "candidata sem nome"
+        }
+
+    if candidata.get("categoria_osm") in CATEGORIAS_EXCLUIDAS:
+        return {
+            "aceita": False,
+            "nome": nome,
+            "motivo": (
+                "categoria não aceita (restaurante/bar/padaria/farmácia)"
+            )
         }
 
     duplicada = buscar_empresa(
@@ -78,13 +91,6 @@ def processar_candidata(
             "motivo": verificacao["status"]
         }
 
-    fontes = []
-
-    for item in verificacao.get("evidence", []):
-        url = item.get("url") if isinstance(item, dict) else None
-        if url and url not in fontes:
-            fontes.append(url)
-
     empresa = {
         "name": nome,
         "city": cidade,
@@ -97,8 +103,7 @@ def processar_candidata(
         "google_maps": _montar_link_maps(nome, cidade, estado),
         "website": "",
         "website_status": verificacao["status"],
-        "website_confidence": verificacao.get("confidence", 0),
-        "sources": fontes
+        "website_confidence": verificacao.get("confidence", 0)
     }
 
     salvar_empresa(empresa)
