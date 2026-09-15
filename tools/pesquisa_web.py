@@ -106,7 +106,6 @@ def normalizar_localizacao(localizacao: str) -> str:
 
     resultado = localizacao.strip()
 
-    # Remove um sufixo de UF (duas letras maiúsculas) com ou sem hífen.
     resultado = re.sub(
         r"\s*-?\s*[A-Z]{2}\s*$",
         "",
@@ -244,6 +243,18 @@ def montar_endereco(tags: dict) -> str:
 
     return ", ".join(partes)
 
+CHAVES_CATEGORIA = ["shop", "amenity", "office", "craft", "tourism", "leisure"]
+
+
+def identificar_categoria_osm(tags: dict) -> str:
+
+    for chave in CHAVES_CATEGORIA:
+        valor = tags.get(chave)
+        if valor:
+            return valor
+
+    return ""
+
 
 def _executar_overpass(overpass_query: str) -> list[dict]:
     """
@@ -261,11 +272,6 @@ def _executar_overpass(overpass_query: str) -> list[dict]:
     response = None
     ultimo_erro = None
 
-    # Duas rodadas pelos 3 espelhos, com uma pausa entre elas. O
-    # Overpass público às vezes fica lento em TODOS os espelhos ao
-    # mesmo tempo (picos de uso, atualização de base) - uma segunda
-    # rodada depois de uma pausa curta resolve a maioria desses casos
-    # sem custar caro no orçamento de tempo (300s no Hobby da Vercel).
     for rodada in range(2):
 
         if rodada > 0:
@@ -296,8 +302,6 @@ def _executar_overpass(overpass_query: str) -> list[dict]:
                 continue
 
             except requests.exceptions.HTTPError as error:
-                # 429 (rate limit) e 502/503/504 (servidor ocupado)
-                # valem trocar de espelho.
                 status = error.response.status_code if error.response else None
 
                 print(
@@ -344,16 +348,13 @@ def _executar_overpass(overpass_query: str) -> list[dict]:
             "nome": tags.get("name", ""),
             "endereco": montar_endereco(tags),
             "telefone": tags.get("phone", ""),
-            "site": tags.get("website", "")
+            "site": tags.get("website", ""),
+            "categoria_osm": identificar_categoria_osm(tags)
         })
 
     return resultados
 
 
-# Tags amplas o suficiente pra cobrir a maioria dos pequenos negócios
-# locais, sem depender de mapear cada categoria em português pra uma
-# tag específica. "shop", "office" e "craft" sozinhos (sem valor
-# específico) já casam com centenas de tipos de comércio/serviço.
 TAGS_NEGOCIOS_LOCAIS = [
     'nwr["shop"](area.searchArea);',
     'nwr["office"](area.searchArea);',
@@ -417,7 +418,6 @@ def buscar_candidatas_amplas(
 
     resultados = _executar_overpass(overpass_query)
 
-    # Descarta candidatas sem nome (não dá pra verificar nem salvar).
     return [
         r for r in resultados
         if r.get("nome", "").strip()
