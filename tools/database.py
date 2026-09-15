@@ -8,6 +8,21 @@ load_dotenv()
 
 _supabase: Client | None = None
 
+CAMPOS_TABELA = [
+    "name",
+    "city",
+    "state",
+    "country",
+    "address",
+    "phone",
+    "instagram",
+    "facebook",
+    "google_maps",
+    "website",
+    "website_status",
+    "website_confidence"
+]
+
 
 def obter_supabase() -> Client:
     """
@@ -73,54 +88,38 @@ def buscar_empresa(
     }
 
 
+def listar_empresas_por_cidade(cidade: str) -> list[dict]:
+    """
+    Lista todas as empresas já salvas de uma cidade (de buscas
+    anteriores), só com os campos que existem na tabela.
+    """
+
+    response = (
+        obter_supabase()
+        .table("companies")
+        .select(",".join(CAMPOS_TABELA))
+        .ilike("city", cidade)
+        .execute()
+    )
+
+    return response.data or []
+
+
 def salvar_empresa(empresa: dict) -> dict:
 
     dados = {
-        "name": empresa.get("name"),
-        "city": empresa.get("city"),
-        "state": empresa.get("state"),
-        "country": empresa.get("country", "Brasil"),
-        "address": empresa.get("address"),
-        "phone": empresa.get("phone"),
-        "instagram": empresa.get("instagram"),
-        "facebook": empresa.get("facebook"),
-        "google_maps": empresa.get("google_maps"),
-        "website": empresa.get("website"),
-        "website_status": empresa.get("website_status"),
-        "website_confidence": empresa.get("website_confidence"),
-        "sources": empresa.get("sources")
+        campo: empresa.get(campo)
+        for campo in CAMPOS_TABELA
     }
 
-    supabase = obter_supabase()
+    dados["country"] = empresa.get("country", "Brasil")
 
-    try:
-        response = (
-            supabase
-            .table("companies")
-            .insert(dados)
-            .execute()
-        )
-
-    except Exception as error:
-
-        mensagem = str(error)
-
-        # A tabela "companies" real pode não ter a coluna "sources"
-        # criada ainda. Nesse caso, salva sem ela em vez de falhar
-        # a empresa inteira.
-        if "sources" in mensagem and "column" in mensagem.lower():
-
-            dados.pop("sources", None)
-
-            response = (
-                supabase
-                .table("companies")
-                .insert(dados)
-                .execute()
-            )
-
-        else:
-            raise
+    response = (
+        obter_supabase()
+        .table("companies")
+        .insert(dados)
+        .execute()
+    )
 
     return {
         "sucesso": True,
@@ -213,12 +212,6 @@ salvar_empresa_tool = {
                     },
                     "website_confidence": {
                         "type": "number"
-                    },
-                    "sources": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        }
                     }
                 },
                 "required": [
