@@ -11,7 +11,6 @@ interface Empresa {
   website: string;
   website_status: string;
   website_confidence: number;
-  sources?: string[];
 }
 
 interface ResultadoItem {
@@ -28,6 +27,10 @@ interface Candidata {
 
 interface RespostaCandidatas {
   candidatas: Candidata[];
+}
+
+interface RespostaEmpresasSalvas {
+  empresas: Empresa[];
 }
 
 interface RespostaProcessarCandidata {
@@ -85,7 +88,6 @@ async function carregarEstados(): Promise<void> {
       opcao.textContent = `${estado.nome} (${estado.sigla})`;
       selectEstado!.appendChild(opcao);
     });
-
   } catch {
     selectEstado!.innerHTML = '<option value="">Falha ao carregar estados</option>';
   }
@@ -110,10 +112,8 @@ async function carregarCidades(uf: string): Promise<void> {
     });
 
     selectCidade!.disabled = false;
-
   } catch {
     selectCidade!.innerHTML = '<option value="">Falha ao carregar cidades</option>';
-
   } finally {
     atualizarBotao();
   }
@@ -127,14 +127,9 @@ function limparTabela(): void {
   corpoTabela!.innerHTML = "";
 }
 
-interface ConfigPublica {
-  quantidade_empresas: number;
-}
-
 let debugLogAcumulado: string[] = [];
 
 function renderizarDebugLog(): void {
-
   const anterior = document.querySelector("#debug-log");
   anterior?.remove();
 
@@ -167,9 +162,11 @@ function renderizarLinha(item: ResultadoItem): void {
 
   if (item.erro) {
     linha.appendChild(criarCelula(item.empresa?.name ?? ""));
+
     const celulaErro = document.createElement("td");
     celulaErro.colSpan = 5;
     celulaErro.textContent = `Erro ao processar: ${item.erro}`;
+
     linha.appendChild(celulaErro);
     corpoTabela!.appendChild(linha);
     return;
@@ -185,6 +182,7 @@ function renderizarLinha(item: ResultadoItem): void {
   linha.appendChild(criarCelula(empresa.address || ""));
 
   const celulaMapa = document.createElement("td");
+
   if (empresa.google_maps) {
     const link = document.createElement("a");
     link.href = empresa.google_maps;
@@ -193,13 +191,16 @@ function renderizarLinha(item: ResultadoItem): void {
     link.textContent = "Ver mapa";
     celulaMapa.appendChild(link);
   }
+
   linha.appendChild(celulaMapa);
 
   const celulaStatus = document.createElement("td");
   const info = STATUS_LEGIVEL[empresa.website_status];
+
   const selo = document.createElement("span");
   selo.className = `badge ${info?.classe ?? "badge--neutro"}`;
   selo.textContent = info?.texto ?? empresa.website_status ?? "";
+
   celulaStatus.appendChild(selo);
   linha.appendChild(celulaStatus);
 
@@ -210,20 +211,32 @@ function aguardar(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function buscarEmpresasSalvas(cidade: string): Promise<Empresa[]> {
+  const parametros = new URLSearchParams({ cidade });
+  const resposta = await fetch(`/api/empresas_salvas?${parametros.toString()}`);
+
+  if (!resposta.ok) {
+    const corpo = await resposta.text();
+    throw new Error(`${resposta.status} - ${corpo}`);
+  }
+
+  const dados: RespostaEmpresasSalvas = await resposta.json();
+  return dados.empresas;
+}
+
 async function buscarCandidatasDaCidade(
   cidade: string,
   estado: string
 ): Promise<Candidata[]> {
-
   const parametros = new URLSearchParams({ cidade, estado });
   const url = `/api/candidatas?${parametros.toString()}`;
 
   for (let tentativa = 0; tentativa < 2; tentativa++) {
-
     if (tentativa > 0) {
       debugLogAcumulado.push(
         "Overpass falhou na 1ª tentativa, tentando de novo em instantes..."
       );
+
       renderizarDebugLog();
       await aguardar(3000);
     }
@@ -249,7 +262,6 @@ async function processarUmaCandidata(
   cidade: string,
   estado: string
 ): Promise<RespostaProcessarCandidata> {
-
   const resposta = await fetch("/api/processar_candidata", {
     method: "POST",
     headers: {
@@ -279,59 +291,65 @@ async function iniciarBusca(): Promise<void> {
   debugLogAcumulado = [];
   renderizarDebugLog();
 
-  let totalAceitas = 0;
+  let totalEncontradas = 0;
 
   try {
-    const respostaConfig = await fetch("/api/config");
+    elementoStatus!.textContent =
+      `Carregando empresas já salvas de ${cidade}...`;
 
-    if (!respostaConfig.ok) {
-      throw new Error("Não foi possível carregar a configuração da busca.");
-    }
+    const salvas = await buscarEmpresasSalvas(cidade);
 
-    const config: ConfigPublica = await respostaConfig.json();
-    const alvo = config.quantidade_empresas;
+    salvas.forEach((empresa) => {
+      renderizarLinha({ empresa });
+      totalEncontradas += 1;
+    });
 
-    elementoStatus!.textContent = `Buscando candidatas em ${cidade}...`;
+    debugLogAcumulado.push(
+      `${salvas.length} empresa(s) já salva(s) de buscas anteriores em ${cidade}.`
+    );
+
+    renderizarDebugLog();
+
+    elementoStatus!.textContent =
+      `Buscando novas candidatas em ${cidade}...`;
 
     const candidatas = await buscarCandidatasDaCidade(cidade, estado);
 
     debugLogAcumulado.push(
       `${candidatas.length} candidata(s) encontrada(s) no total em ${cidade}.`
     );
+
     renderizarDebugLog();
 
     for (let i = 0; i < candidatas.length; i++) {
-
-      if (totalAceitas >= alvo) {
-        debugLogAcumulado.push(`Meta de ${alvo} empresas atingida, parando.`);
-        break;
-      }
-
       const candidata = candidatas[i];
 
       elementoStatus!.textContent =
-        `Encontradas: ${totalAceitas}/${alvo} — verificando "${candidata.nome}" ` +
+        `Encontradas: ${totalEncontradas} — verificando "${candidata.nome}" ` +
         `(candidata ${i + 1}/${candidatas.length})...`;
 
       try {
-        const resultado = await processarUmaCandidata(candidata, cidade, estado);
+        const resultado = await processarUmaCandidata(
+          candidata,
+          cidade,
+          estado
+        );
 
         if (resultado.aceita && resultado.empresa) {
-          totalAceitas += 1;
+          totalEncontradas += 1;
           renderizarLinha({ empresa: resultado.empresa });
+
           debugLogAcumulado.push(
             `Aceita "${resultado.nome ?? candidata.nome}"` +
-            (resultado.erro_enriquecimento
-              ? ` (perfil/solução falhou: ${resultado.erro_enriquecimento})`
-              : "")
+              (resultado.erro_enriquecimento
+                ? ` (perfil/solução falhou: ${resultado.erro_enriquecimento})`
+                : "")
           );
-
         } else {
           debugLogAcumulado.push(
             `Rejeitada "${resultado.nome ?? candidata.nome}" — ${resultado.motivo}`
           );
         }
-
       } catch (erro) {
         debugLogAcumulado.push(
           `Erro em "${candidata.nome}" — ${(erro as Error).message}`
@@ -342,13 +360,12 @@ async function iniciarBusca(): Promise<void> {
     }
 
     elementoStatus!.textContent =
-      totalAceitas > 0
-        ? `Busca concluída — ${totalAceitas}/${alvo} empresa(s) encontrada(s) em ${cidade}.`
+      totalEncontradas > 0
+        ? `Busca concluída — ${totalEncontradas} empresa(s) no total em ${cidade}.`
         : `Busca concluída — nenhuma empresa encontrada em ${cidade}.`;
-
   } catch (erro) {
-    elementoStatus!.textContent = `Falha ao executar a busca: ${(erro as Error).message}`;
-
+    elementoStatus!.textContent =
+      `Falha ao executar a busca: ${(erro as Error).message}`;
   } finally {
     atualizarBotao();
   }
@@ -359,7 +376,9 @@ selectEstado.addEventListener("change", () => {
 
   if (!uf) {
     selectCidade!.disabled = true;
-    selectCidade!.innerHTML = '<option value="">Selecione o estado primeiro</option>';
+    selectCidade!.innerHTML =
+      '<option value="">Selecione o estado primeiro</option>';
+
     atualizarBotao();
     return;
   }
