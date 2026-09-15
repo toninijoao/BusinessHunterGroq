@@ -1,13 +1,11 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-from orquestrador.orquestrador import carregar_config
 from orquestrador.candidatos import listar_candidatas, processar_candidata
+from tools.database import listar_empresas_por_cidade
 from agentes.agente_filtro import executar_filtro
 from agentes.agente_arquiteto import executar_arquiteto
 from agentes.agente_planilha import executar_planilha
@@ -28,18 +26,23 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/api/config")
-def config_publica():
+@app.get("/api/empresas_salvas")
+def empresas_salvas(cidade: str):
     """
-    Expõe a quantidade-alvo de empresas configurada, pra o frontend
-    saber quando parar de processar candidatas.
+    Lista empresas já salvas de buscas anteriores nessa cidade, pra
+    mostrar de novo quando o usuário buscar a mesma cidade outra vez.
     """
 
-    config = carregar_config()
+    try:
+        lista = listar_empresas_por_cidade(cidade)
 
-    return {
-        "quantidade_empresas": config.get("quantidade_empresas", 8)
-    }
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+    return {"empresas": lista}
 
 
 class ProcessarCandidataRequest(BaseModel):

@@ -1,28 +1,26 @@
-from orquestrador.orquestrador import carregar_config
 from orquestrador.candidatos import listar_candidatas, processar_candidata
+from tools.database import listar_empresas_por_cidade
 from agentes.agente_filtro import executar_filtro
 from agentes.agente_arquiteto import executar_arquiteto
 from agentes.agente_planilha import executar_planilha
 
 
 def main():
-    config = carregar_config()
-    alvo = config.get("quantidade_empresas", 8)
-
     cidade = input("Cidade: ").strip()
     estado = input("Estado (UF, opcional): ").strip()
 
-    print(f"\nBuscando candidatas em {cidade}...")
+    ja_salvas = listar_empresas_por_cidade(cidade)
+    print(f"\n{len(ja_salvas)} empresa(s) já salva(s) de buscas anteriores em {cidade}:")
+    for empresa in ja_salvas:
+        print(f"  - {empresa.get('name')}")
+
+    print(f"\nBuscando novas candidatas em {cidade}...")
     candidatas = listar_candidatas(cidade)
     print(f"{len(candidatas)} candidata(s) encontrada(s) no total.\n")
 
     aceitas = 0
 
     for candidata in candidatas:
-
-        if aceitas >= alvo:
-            print(f"\nMeta de {alvo} empresas atingida, parando.")
-            break
 
         print(f"Verificando: {candidata.get('nome')}...")
         resultado = processar_candidata(candidata, cidade=cidade, estado=estado)
@@ -33,7 +31,7 @@ def main():
 
         aceitas += 1
         empresa = resultado["empresa"]
-        print(f"  -> ACEITA ({aceitas}/{alvo}): {empresa['name']}")
+        print(f"  -> ACEITA: {empresa['name']}")
 
         try:
             perfil = executar_filtro(empresa)
@@ -44,7 +42,8 @@ def main():
 
     print(
         f"\nPipeline concluído."
-        f"\nEmpresas encontradas: {aceitas}/{alvo}"
+        f"\nEmpresas novas encontradas: {aceitas}"
+        f"\nTotal na cidade (novas + antigas): {aceitas + len(ja_salvas)}"
     )
 
 if __name__ == "__main__":
